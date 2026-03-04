@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+
+# Database
+*.db
+instance/
+
+# Uploads
+app/static/uploads/
+
+# Logs
+logs/
+*.log
+
+# Dist
+/dist
+/build
+*.exe
+
+# OS
+Thumbs.db
+.DS_Store

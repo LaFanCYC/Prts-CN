@@ -1,0 +1,420 @@
+from flask import Blueprint, request, jsonify
+from app import db
+from app.models import Subject, Exam, Question, Prompt, Setting
+from app.agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent
+from app.agents.prompt_generator import init_prompts, get_prompt
+from werkzeug.utils import secure_filename
+import os
+import uuid
+from datetime import datetime
+import json
+
+api = Blueprint('api', __name__)
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@api.route('/subjects', methods=['GET'])
+def get_subjects():
+    subjects = Subject.query.all()
+    return jsonify([s.to_dict() for s in subjects])
+
+
+@api.route('/subjects', methods=['POST'])
+def create_subject():
+    data = request.get_json()
+    subject = Subject(name=data.get('name'))
+    db.session.add(subject)
+    db.session.commit()
+    return jsonify(subject.to_dict()), 201
+
+
+@api.route('/subjects/<int:subject_id>', methods=['GET'])
+def get_subject(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    return jsonify(subject.to_dict())
+
+
+@api.route('/subjects/<int:subject_id>', methods=['PUT'])
+def update_subject(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    data = request.get_json()
+    subject.name = data.get('name', subject.name)
+    subject.analysis_report = data.get('analysis_report', subject.analysis_report)
+    db.session.commit()
+    return jsonify(subject.to_dict())
+
+
+@api.route('/subjects/<int:subject_id>', methods=['DELETE'])
+def delete_subject(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    db.session.delete(subject)
+    db.session.commit()
+    return jsonify({'message': 'Subject deleted'})
+
+
+@api.route('/subjects/<int:subject_id>/exams', methods=['GET'])
+def get_exams(subject_id):
+    exams = Exam.query.filter_by(subject_id=subject_id).order_by(Exam.date.desc()).all()
+    return jsonify([e.to_dict() for e in exams])
+
+
+@api.route('/exams', methods=['POST'])
+def create_exam():
+    data = request.get_json()
+    exam = Exam(
+        subject_id=data.get('subject_id'),
+        name=data.get('name'),
+        date=datetime.strptime(data.get('date'), '%Y-%m-%d').date()
+    )
+    db.session.add(exam)
+    db.session.commit()
+    return jsonify(exam.to_dict()), 201
+
+
+@api.route('/exams/<int:exam_id>', methods=['GET'])
+def get_exam(exam_id):
+    exam = Exam.query.get_or_404(exam_id)
+    return jsonify(exam.to_dict())
+
+
+@api.route('/exams/<int:exam_id>', methods=['PUT'])
+def update_exam(exam_id):
+    exam = Exam.query.get_or_404(exam_id)
+    data = request.get_json()
+    exam.name = data.get('name', exam.name)
+    exam.analysis_report = data.get('analysis_report', exam.analysis_report)
+    if 'date' in data:
+        exam.date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
+    db.session.commit()
+    return jsonify(exam.to_dict())
+
+
+@api.route('/exams/<int:exam_id>', methods=['DELETE'])
+def delete_exam(exam_id):
+    exam = Exam.query.get_or_404(exam_id)
+    db.session.delete(exam)
+    db.session.commit()
+    return jsonify({'message': 'Exam deleted'})
+
+
+@api.route('/exams/<int:exam_id>/questions', methods=['GET'])
+def get_questions(exam_id):
+    questions = Question.query.filter_by(exam_id=exam_id).order_by(Question.id).all()
+    return jsonify([q.to_dict() for q in questions])
+
+
+@api.route('/questions/<int:question_id>', methods=['GET'])
+def get_question(question_id):
+    question = Question.query.get_or_404(question_id)
+    return jsonify(question.to_dict())
+
+
+@api.route('/questions/<int:question_id>', methods=['PUT'])
+def update_question(question_id):
+    question = Question.query.get_or_404(question_id)
+    data = request.get_json()
+    
+    if 'question_index' in data:
+        question.question_index = data['question_index']
+    if 'ocr_text' in data:
+        question.ocr_text = data['ocr_text']
+    if 'max_score' in data:
+        question.max_score = data['max_score']
+    if 'user_answer_text' in data:
+        question.user_answer_text = data['user_answer_text']
+    if 'coordinates' in data:
+        question.coordinates = json.dumps(data['coordinates'])
+    if 'knowledge_tags' in data:
+        question.knowledge_tags = json.dumps(data['knowledge_tags'])
+    if 'difficulty' in data:
+        question.difficulty = data['difficulty']
+    if 'user_score' in data:
+        question.user_score = data['user_score']
+    if 'standard_answer' in data:
+        question.standard_answer = data['standard_answer']
+    if 'feedback' in data:
+        question.feedback = data['feedback']
+    
+    db.session.commit()
+    return jsonify(question.to_dict())
+
+
+@api.route('/upload', methods=['POST'])
+def upload_image():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    exam_id = request.form.get('exam_id')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit('.', 1)[1].lower()
+        unique_filename = f"{uuid.uuid4()}.{ext}"
+        
+        upload_folder = os.getenv('UPLOAD_FOLDER', 'app/static/uploads')
+        os.makedirs(upload_folder, exist_ok=True)
+        filepath = os.path.join(upload_folder, unique_filename)
+        file.save(filepath)
+        
+        relative_path = f"/static/uploads/{unique_filename}"
+        
+        vision_agent = VisionAgent()
+        custom_prompt = get_prompt('vision')
+        vision_result = vision_agent.analyze(filepath, custom_prompt)
+        
+        questions_data = []
+        if vision_result.get('is_exam_paper'):
+            for item in vision_result.get('items', []):
+                question = Question(
+                    exam_id=exam_id,
+                    question_index=item.get('index', ''),
+                    ocr_text=item.get('text', ''),
+                    coordinates=json.dumps(item.get('bbox', [])),
+                    image_path=relative_path
+                )
+                db.session.add(question)
+                questions_data.append(question)
+        else:
+            # 如果未检测到试卷，创建一个默认题目
+            question = Question(
+                exam_id=exam_id,
+                question_index='1',
+                ocr_text='未检测到题目，请手动输入',
+                coordinates=json.dumps([]),
+                image_path=relative_path
+            )
+            db.session.add(question)
+            questions_data.append(question)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'image_path': relative_path,
+            'vision_result': vision_result,
+            'questions': [q.to_dict() for q in questions_data]
+        })
+    
+    return jsonify({'error': 'Invalid file type'}), 400
+
+
+@api.route('/analyze-metadata/<int:question_id>', methods=['POST'])
+def analyze_metadata(question_id):
+    question = Question.query.get_or_404(question_id)
+    
+    metadata_agent = MetadataAgent()
+    custom_prompt = get_prompt('metadata')
+    result = metadata_agent.analyze(question.ocr_text, custom_prompt)
+    
+    question.knowledge_tags = json.dumps(result.get('knowledge_tags', []))
+    question.difficulty = result.get('difficulty', 3)
+    db.session.commit()
+    
+    return jsonify(question.to_dict())
+
+
+@api.route('/grade/<int:question_id>', methods=['POST'])
+def grade_question(question_id):
+    question = Question.query.get_or_404(question_id)
+    
+    grading_agent = GradingAgent()
+    custom_prompt = get_prompt('grading')
+    result = grading_agent.grade(
+        question.ocr_text,
+        question.user_answer_text,
+        question.max_score,
+        custom_prompt
+    )
+    
+    question.standard_answer = result.get('standard_answer', '')
+    question.user_score = result.get('user_score', 0)
+    question.feedback = result.get('feedback', '')
+    db.session.commit()
+    
+    return jsonify(question.to_dict())
+
+
+@api.route('/grade-all/<int:exam_id>', methods=['POST'])
+def grade_all_questions(exam_id):
+    exam = Exam.query.get_or_404(exam_id)
+    questions = Question.query.filter_by(exam_id=exam_id).all()
+    
+    grading_agent = GradingAgent()
+    custom_prompt = get_prompt('grading')
+    
+    results = []
+    for question in questions:
+        result = grading_agent.grade(
+            question.ocr_text,
+            question.user_answer_text,
+            question.max_score,
+            custom_prompt
+        )
+        question.standard_answer = result.get('standard_answer', '')
+        question.user_score = result.get('user_score', 0)
+        question.feedback = result.get('feedback', '')
+        results.append(question.to_dict())
+    
+    db.session.commit()
+    return jsonify(results)
+
+
+@api.route('/analyze-exam/<int:exam_id>', methods=['POST'])
+def analyze_exam(exam_id):
+    exam = Exam.query.get_or_404(exam_id)
+    subject = Subject.query.get(exam.subject_id)
+    questions = Question.query.filter_by(exam_id=exam_id).all()
+    
+    exam_data = {
+        'name': exam.name,
+        'date': exam.date.isoformat() if exam.date else '',
+        'subject_name': subject.name if subject else '',
+        'questions': [q.to_dict() for q in questions]
+    }
+    
+    analysis_agent = AnalysisAgent()
+    custom_prompt = get_prompt('analysis')
+    result = analysis_agent.analyze(exam_data, custom_prompt)
+    
+    exam.analysis_report = json.dumps(result, ensure_ascii=False)
+    db.session.commit()
+    
+    return jsonify(result)
+
+
+@api.route('/prompts', methods=['GET'])
+def get_prompts():
+    prompts = Prompt.query.all()
+    return jsonify([p.to_dict() for p in prompts])
+
+
+@api.route('/prompts/<int:prompt_id>', methods=['GET'])
+def get_prompt_by_id(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    return jsonify(prompt.to_dict())
+
+
+@api.route('/prompts/<int:prompt_id>', methods=['PUT'])
+def update_prompt(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    data = request.get_json()
+    
+    prompt.system_prompt = data.get('system_prompt', prompt.system_prompt)
+    prompt.role = data.get('role', prompt.role)
+    prompt.description = data.get('description', prompt.description)
+    prompt.is_active = data.get('is_active', prompt.is_active)
+    
+    db.session.commit()
+    return jsonify(prompt.to_dict())
+
+
+@api.route('/prompts/<int:prompt_id>/reset', methods=['POST'])
+def reset_prompt(prompt_id):
+    from app.agents.ai_agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent
+    
+    prompt = Prompt.query.get_or_404(prompt_id)
+    
+    defaults = {
+        'vision': VisionAgent.DEFAULT_PROMPT,
+        'metadata': MetadataAgent.DEFAULT_PROMPT,
+        'grading': GradingAgent.DEFAULT_PROMPT,
+        'analysis': AnalysisAgent.DEFAULT_PROMPT
+    }
+    
+    prompt.system_prompt = defaults.get(prompt.name, prompt.system_prompt)
+    db.session.commit()
+    
+    return jsonify(prompt.to_dict())
+
+
+@api.route('/settings', methods=['GET'])
+def get_settings():
+    settings = Setting.query.all()
+    settings_dict = {}
+    for setting in settings:
+        settings_dict[setting.key] = setting.value
+    
+    # Default values if not in database
+    default_settings = {
+        'api_key': os.getenv('AI_API_KEY', 'your-api-key-here'),
+        'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
+        'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
+        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+    }
+    
+    for key, default_value in default_settings.items():
+        if key not in settings_dict:
+            settings_dict[key] = default_value
+    
+    return jsonify(settings_dict)
+
+
+@api.route('/settings', methods=['PUT'])
+def update_settings():
+    data = request.get_json()
+    
+    for key, value in data.items():
+        setting = Setting.query.filter_by(key=key).first()
+        if setting:
+            setting.value = value
+        else:
+            setting = Setting(
+                key=key,
+                value=value
+            )
+            db.session.add(setting)
+    
+    db.session.commit()
+    return jsonify({'message': 'Settings updated successfully'})
+
+
+@api.route('/settings/reset', methods=['POST'])
+def reset_settings():
+    # Delete all settings
+    Setting.query.delete()
+    db.session.commit()
+    
+    # Return default settings
+    default_settings = {
+        'api_key': os.getenv('AI_API_KEY', 'your-api-key-here'),
+        'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
+        'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
+        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+    }
+    
+    return jsonify(default_settings)
+
+
+@api.route('/dashboard/<int:subject_id>', methods=['GET'])
+def get_dashboard(subject_id):
+    subject = Subject.query.get_or_404(subject_id)
+    exams = Exam.query.filter_by(subject_id=subject_id).order_by(Exam.date).all()
+    
+    exam_data = []
+    for exam in exams:
+        questions = Question.query.filter_by(exam_id=exam.id).all()
+        total_score = sum(q.max_score or 0 for q in questions)
+        user_score = sum(q.user_score or 0 for q in questions)
+        
+        exam_data.append({
+            'id': exam.id,
+            'name': exam.name,
+            'date': exam.date.isoformat() if exam.date else '',
+            'total_score': total_score,
+            'user_score': user_score,
+            'score_rate': round(user_score / total_score * 100, 1) if total_score > 0 else 0
+        })
+    
+    return jsonify({
+        'subject': subject.to_dict(),
+        'exams': exam_data
+    })

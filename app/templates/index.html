@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GradeAI - 智能成绩分析系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span class="logo-icon">📊</span>
+            <span class="logo-text">GradeAI</span>
+        </div>
+        <nav class="nav-menu">
+            <a href="#" class="nav-item active" data-page="subjects">
+                <span class="nav-icon">📚</span>
+                <span class="nav-text">学科</span>
+            </a>
+            <a href="#" class="nav-item" data-page="dashboard">
+                <span class="nav-icon">📈</span>
+                <span class="nav-text">分析仪表盘</span>
+            </a>
+            <a href="#" class="nav-item" data-page="prompts">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-text">Prompt管理</span>
+            </a>
+            <a href="#" class="nav-item" data-page="settings">
+                <span class="nav-icon">🔧</span>
+                <span class="nav-text">设置</span>
+            </a>
+        </nav>
+    </div>
+    
+    <main class="main-content">
+        <div id="subjects-page" class="page active">
+            <header class="page-header">
+                <h1>学科管理</h1>
+                <button class="btn btn-primary" id="add-subject-btn">+ 新建学科</button>
+            </header>
+            <div class="subjects-grid" id="subjects-grid"></div>
+        </div>
+        
+        <div id="exams-page" class="page">
+            <header class="page-header">
+                <button class="btn btn-back" id="back-to-subjects">← 返回</button>
+                <h1 id="current-subject-name">考试列表</h1>
+                <button class="btn btn-primary" id="add-exam-btn">+ 新建考试</button>
+            </header>
+            <div class="exams-grid" id="exams-grid"></div>
+        </div>
+        
+        <div id="correction-page" class="page">
+            <header class="page-header">
+                <button class="btn btn-back" id="back-to-exams">← 返回考试列表</button>
+                <h1 id="current-exam-name">校正工作台</h1>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="upload-btn">📤 上传试卷</button>
+                    <button class="btn btn-primary" id="start-grading-btn">开始批改</button>
+                </div>
+            </header>
+            <div class="correction-workspace">
+                <div class="image-panel">
+                    <div class="canvas-container">
+                        <canvas id="exam-canvas"></canvas>
+                    </div>
+                </div>
+                <div class="form-panel">
+                    <div class="questions-list" id="questions-list"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="dashboard-page" class="page">
+            <header class="page-header">
+                <h1>成绩分析仪表盘</h1>
+            </header>
+            <div class="dashboard-container">
+                <div class="subject-selector">
+                    <label>选择学科：</label>
+                    <select id="dashboard-subject-select"></select>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <h3>成绩趋势</h3>
+                        <div id="trend-chart" class="chart"></div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>得分率分布</h3>
+                        <div id="rate-chart" class="chart"></div>
+                    </div>
+                </div>
+                <div class="exam-analysis" id="exam-analysis"></div>
+            </div>
+        </div>
+        
+        <div id="prompts-page" class="page">
+            <header class="page-header">
+                <h1>Prompt 管理</h1>
+            </header>
+            <div class="prompts-container">
+                <div class="prompts-list" id="prompts-list"></div>
+                <div class="prompt-editor" id="prompt-editor">
+                    <div class="editor-header">
+                        <h3 id="editor-title">编辑 Prompt</h3>
+                        <div class="editor-actions">
+                            <button class="btn btn-secondary" id="reset-prompt-btn">重置默认</button>
+                            <button class="btn btn-primary" id="save-prompt-btn">保存</button>
+                        </div>
+                    </div>
+                    <div class="editor-form">
+                        <div class="form-group">
+                            <label>角色名称</label>
+                            <input type="text" id="prompt-role" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>描述</label>
+                            <input type="text" id="prompt-description" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>System Prompt</label>
+                            <textarea id="prompt-content" class="form-textarea"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="settings-page" class="page">
+            <header class="page-header">
+                <h1>系统设置</h1>
+            </header>
+            <div class="settings-container">
+                <div class="settings-card">
+                    <h3>AI 配置</h3>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label>API 密钥</label>
+                            <input type="password" id="api-key" class="form-input" placeholder="输入 API 密钥">
+                        </div>
+                        <div class="form-group">
+                            <label>API 基础 URL</label>
+                            <input type="url" id="api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                        </div>
+                        <div class="form-group">
+                            <label>视觉模型</label>
+                            <input type="text" id="model-vision" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                        </div>
+                        <div class="form-group">
+                            <label>批改模型</label>
+                            <input type="text" id="model-grading" class="form-input" placeholder="如：doubao-seed-2.0-mini">
+                        </div>
+                        <div class="form-group">
+                            <label>分析模型</label>
+                            <input type="text" id="model-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                        </div>
+                        <div class="settings-actions">
+                            <button class="btn btn-secondary" id="reset-settings-btn">重置默认</button>
+                            <button class="btn btn-primary" id="save-settings-btn">保存设置</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="modal" id="subject-modal">
+        <div class="modal-content">
+            <h2>新建学科</h2>
+            <div class="form-group">
+                <label>学科名称</label>
+                <input type="text" id="subject-name" class="form-input" placeholder="如：数学、英语、物理">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancel-subject-btn">取消</button>
+                <button class="btn btn-primary" id="save-subject-btn">保存</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="exam-modal">
+        <div class="modal-content">
+            <h2>新建考试</h2>
+            <div class="form-group">
+                <label>考试名称</label>
+                <input type="text" id="exam-name" class="form-input" placeholder="如：2024年期末考试">
+            </div>
+            <div class="form-group">
+                <label>考试日期</label>
+                <input type="date" id="exam-date" class="form-input">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancel-exam-btn">取消</button>
+                <button class="btn btn-primary" id="save-exam-btn">保存</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="exam-actions-modal">
+        <div class="modal-content">
+            <h2>考试操作</h2>
+            <div class="exam-actions">
+                <button class="btn btn-primary btn-block" id="action-upload">
+                    📤 上传试卷
+                </button>
+                <button class="btn btn-secondary btn-block" id="action-edit">
+                    ✏️ 编辑题目
+                </button>
+                <button class="btn btn-secondary btn-block" id="action-analysis">
+                    📊 查看分析
+                </button>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancel-exam-actions">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="upload-modal">
+        <div class="modal-content upload-modal">
+            <h2>上传试卷图片</h2>
+            <div class="upload-area" id="upload-area">
+                <span class="upload-icon">📁</span>
+                <p>拖拽图片到此处，或点击选择（支持多张图片）</p>
+                <input type="file" id="file-input" accept="image/*" multiple hidden>
+            </div>
+            <div class="upload-progress" id="upload-progress" style="display:none;">
+                <div class="progress-bar"><div class="progress-fill"></div></div>
+                <p>正在分析试卷...</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancel-upload-btn">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
