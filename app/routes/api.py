@@ -263,85 +263,89 @@ def upload_image():
 
 @api.route('/extract-questions', methods=['POST'])
 def extract_questions():
-    logger.log(LOG_CATEGORIES['USER_ACTION'], '提取题目请求', image_path=request.form.get('image_path'), exam_id=request.form.get('exam_id'))
-    
-    image_path = request.form.get('image_path')
-    exam_id = request.form.get('exam_id')
-    
-    if not image_path:
-        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No image path provided')
-        return jsonify({'error': 'No image path provided'}), 400
-    
-    if not exam_id:
-        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No exam id provided')
-        return jsonify({'error': 'No exam id provided'}), 400
-    
-    # 转换相对路径为绝对路径
-    if image_path.startswith('/'):
-        image_path = image_path[1:]  # 移除开头的斜杠
-    
-    # 构建正确的路径：app/static/uploads/filename
-    # 确保路径格式正确，避免os.path.join的问题
-    if not image_path.startswith('app/'):
-        # 直接拼接路径，确保app目录被正确添加
-        image_path = 'app/' + image_path
-    
-    # 使用应用根目录作为基础路径
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
-    # 构建绝对路径
-    absolute_path = os.path.join(project_root, image_path.replace('/', os.sep))
-    
-    if not os.path.exists(absolute_path):
-        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='Image file not found', image_path=absolute_path)
-        return jsonify({'error': 'Image file not found'}), 404
-    
-    # 提取题目
-    vision_agent = VisionAgent()
-    custom_prompt = get_prompt('vision')
-    vision_result = vision_agent.analyze(absolute_path, custom_prompt)
-    
-    # 检查是否有错误
-    if vision_result.get('error'):
-        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error=vision_result.get('error'))
-        return jsonify({'error': vision_result.get('error')}), 500
-    
-    questions_data = []
-    if vision_result.get('is_exam_paper'):
-        # 删除现有的题目
-        Question.query.filter_by(exam_id=exam_id).delete()
+    try:
+        logger.log(LOG_CATEGORIES['USER_ACTION'], '提取题目请求', image_path=request.form.get('image_path'), exam_id=request.form.get('exam_id'))
         
-        for item in vision_result.get('items', []):
+        image_path = request.form.get('image_path')
+        exam_id = request.form.get('exam_id')
+        
+        if not image_path:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No image path provided')
+            return jsonify({'error': 'No image path provided'}), 400
+        
+        if not exam_id:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No exam id provided')
+            return jsonify({'error': 'No exam id provided'}), 400
+        
+        # 转换相对路径为绝对路径
+        if image_path.startswith('/'):
+            image_path = image_path[1:]  # 移除开头的斜杠
+        
+        # 构建正确的路径：app/static/uploads/filename
+        # 确保路径格式正确，避免os.path.join的问题
+        if not image_path.startswith('app/'):
+            # 直接拼接路径，确保app目录被正确添加
+            image_path = 'app/' + image_path
+        
+        # 使用应用根目录作为基础路径
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
+        # 构建绝对路径
+        absolute_path = os.path.join(project_root, image_path.replace('/', os.sep))
+        
+        if not os.path.exists(absolute_path):
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='Image file not found', image_path=absolute_path)
+            return jsonify({'error': 'Image file not found'}), 404
+        
+        # 提取题目
+        vision_agent = VisionAgent()
+        custom_prompt = get_prompt('vision')
+        vision_result = vision_agent.analyze(absolute_path, custom_prompt)
+        
+        # 检查是否有错误
+        if vision_result.get('error'):
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error=vision_result.get('error'))
+            return jsonify({'error': vision_result.get('error')}), 500
+        
+        questions_data = []
+        if vision_result.get('is_exam_paper'):
+            # 删除现有的题目
+            Question.query.filter_by(exam_id=exam_id).delete()
+            
+            for item in vision_result.get('items', []):
+                question = Question(
+                    exam_id=exam_id,
+                    question_index=item.get('index', ''),
+                    ocr_text=item.get('text', ''),
+                    coordinates=json.dumps(item.get('bbox', [])),
+                    image_path=request.form.get('image_path')
+                )
+                db.session.add(question)
+                questions_data.append(question)
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '试卷识别成功', question_count=len(questions_data))
+        else:
+            # 如果未检测到试卷，创建一个默认题目
             question = Question(
                 exam_id=exam_id,
-                question_index=item.get('index', ''),
-                ocr_text=item.get('text', ''),
-                coordinates=json.dumps(item.get('bbox', [])),
+                question_index='1',
+                ocr_text='未检测到题目，请手动输入',
+                coordinates=json.dumps([]),
                 image_path=request.form.get('image_path')
             )
             db.session.add(question)
             questions_data.append(question)
-        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '试卷识别成功', question_count=len(questions_data))
-    else:
-        # 如果未检测到试卷，创建一个默认题目
-        question = Question(
-            exam_id=exam_id,
-            question_index='1',
-            ocr_text='未检测到题目，请手动输入',
-            coordinates=json.dumps([]),
-            image_path=request.form.get('image_path')
-        )
-        db.session.add(question)
-        questions_data.append(question)
-        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '未检测到试卷，创建默认题目')
-    
-    db.session.commit()
-    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目数据保存成功', question_count=len(questions_data))
-    
-    return jsonify({
-        'vision_result': vision_result,
-        'questions': [q.to_dict() for q in questions_data]
-    })
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '未检测到试卷，创建默认题目')
+        
+        db.session.commit()
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目数据保存成功', question_count=len(questions_data))
+        
+        return jsonify({
+            'vision_result': vision_result,
+            'questions': [q.to_dict() for q in questions_data]
+        })
+    except Exception as e:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目过程中发生未捕获异常', error=str(e), exc_info=True)
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
 @api.route('/analyze-metadata/<int:question_id>', methods=['POST'])
