@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = 'http://localhost:5000/api';
 
 let currentSubjectId = null;
 let currentExamId = null;
@@ -8,18 +8,33 @@ let imageScale = 1;
 let selectedQuestionIndex = null;
 
 async function apiRequest(endpoint, options = {}) {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
+    const url = `${API_BASE}${endpoint}`;
+    console.log('API请求:', url, options);
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+        
+        console.log('API响应状态:', response.status);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({
+                error: `HTTP error! status: ${response.status}`
+            }));
+            throw new Error(error.error || 'Request failed');
         }
-    });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Request failed');
+        
+        const data = await response.json();
+        console.log('API响应数据:', data);
+        return data;
+    } catch (error) {
+        console.error('API请求失败:', error);
+        throw error;
     }
-    return response.json();
 }
 
 function showPage(pageId) {
@@ -734,19 +749,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('exam_id', currentExamId);
+                formData.append('extract', 'false'); // 不上传时自动提取题目
                 
+                console.log('上传文件:', file.name, '到', `${API_BASE}/upload`);
                 const response = await fetch(`${API_BASE}/upload`, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
                 });
                 
-                const result = await response.json();
+                console.log('上传响应状态:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 
-                if (result.questions && result.questions.length > 0) {
-                    currentQuestions = currentQuestions.concat(result.questions);
-                    if (!currentImage) {
-                        currentImage = result.image_path;
-                    }
+                const result = await response.json();
+                console.log('上传响应结果:', result);
+                
+                // 只保存图片路径，不提取题目
+                if (result.image_path) {
+                    currentImage = result.image_path;
+                    // 创建一个默认题目
+                    const defaultQuestion = {
+                        id: result.questions ? result.questions[0].id : null,
+                        question_index: '1',
+                        ocr_text: '请点击"提取题目"按钮提取题目',
+                        image_path: result.image_path
+                    };
+                    currentQuestions = [defaultQuestion];
                 }
                 
                 uploadedCount++;
@@ -754,17 +786,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.querySelector('.progress-fill').style.width = `${progress}%`;
             }
             
-            if (currentQuestions.length > 0) {
-                loadCorrectionWorkspace();
-            }
-            
+            loadCorrectionWorkspace();
             hideModal('upload');
         } catch (error) {
+            console.error('上传失败:', error);
             alert('上传失败：' + error.message);
         } finally {
             document.getElementById('upload-area').style.display = 'block';
             document.getElementById('upload-progress').style.display = 'none';
             document.querySelector('.progress-fill').style.width = '0%';
+        }
+    }
+    
+    // 提取题目函数
+    async function extractQuestions() {
+        if (!currentImage) {
+            alert('请先上传试卷图片');
+            return;
+        }
+        
+        const btn = document.getElementById('extract-questions-btn');
+        btn.disabled = true;
+        btn.textContent = '提取中...';
+        
+        try {
+            console.log('开始提取题目，图片路径:', currentImage);
+            
+            // 构建请求数据
+            const formData = new FormData();
+            formData.append('image_path', currentImage);
+            formData.append('exam_id', currentExamId);
+            formData.append('extract', 'true');
+            
+            const response = await fetch(`${API_BASE}/extract-questions`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+            
+            console.log('提取题目响应状态:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('提取题目响应结果:', result);
+            
+            if (result.error) {
+                alert('分析失败：' + result.error);
+                return;
+            }
+            
+            if (result.questions && result.questions.length > 0) {
+                currentQuestions = result.questions;
+                renderQuestionsList();
+                alert('题目提取完成！');
+            } else {
+                alert('未检测到题目，请检查图片是否清晰');
+            }
+        } catch (error) {
+            console.error('提取题目失败:', error);
+            alert('分析失败：' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '提取题目';
         }
     }
     
@@ -800,6 +887,8 @@ document.addEventListener('DOMContentLoaded', () => {
         hideModal('exam-actions');
     });
     
+    document.getElementById('extract-questions-btn').addEventListener('click', extractQuestions);
+    
     document.getElementById('start-grading-btn').addEventListener('click', async () => {
         if (currentQuestions.length === 0) {
             alert('请先上传试卷');
@@ -811,15 +900,18 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.textContent = '批改中...';
         
         try {
+            console.log('开始批改，请求URL:', `${API_BASE}/grade-all/${currentExamId}`);
             const gradedQuestions = await apiRequest(`/grade-all/${currentExamId}`, {
                 method: 'POST'
             });
             
+            console.log('批改完成，返回结果:', gradedQuestions);
             currentQuestions = gradedQuestions;
             renderQuestionsList();
             
             alert('批改完成！');
         } catch (error) {
+            console.error('批改失败:', error);
             alert('批改失败：' + error.message);
         } finally {
             btn.disabled = false;

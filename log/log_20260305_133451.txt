@@ -1,0 +1,7 @@
+{"timestamp": "2026-03-05T13:34:51.054003", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133451.txt", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.054003", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.057315", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133451.txt", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.058385", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.062601", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133451.txt", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.064171", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:34:51.990458", "category": "USER_ACTION", "message": "提取题目请求", "context": {"image_path": "/static/uploads/e497b9ad-23f2-41e2-b02a-e8752539ddd8.jpg", "exam_id": "1"}}

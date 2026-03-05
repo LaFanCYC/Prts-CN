@@ -1,0 +1,19 @@
+{"timestamp": "2026-03-05T13:33:46.696892", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133346.txt", "context": {}}
+{"timestamp": "2026-03-05T13:33:46.696892", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:33:46.715778", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133346.txt", "context": {}}
+{"timestamp": "2026-03-05T13:33:46.715778", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:34:45.798174", "category": "USER_ACTION", "message": "获取学科列表请求", "context": {}}
+{"timestamp": "2026-03-05T13:34:45.802254", "category": "SYSTEM_STATUS", "message": "获取学科列表完成", "context": {"count": 1}}
+{"timestamp": "2026-03-05T13:34:47.408179", "category": "USER_ACTION", "message": "获取学科详情请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T13:34:47.411785", "category": "SYSTEM_STATUS", "message": "获取学科详情完成", "context": {"subject_id": 1, "subject_name": "生物"}}
+{"timestamp": "2026-03-05T13:34:47.647309", "category": "USER_ACTION", "message": "获取学科详情请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T13:34:47.648817", "category": "SYSTEM_STATUS", "message": "获取学科详情完成", "context": {"subject_id": 1, "subject_name": "生物"}}
+{"timestamp": "2026-03-05T13:34:47.962584", "category": "USER_ACTION", "message": "获取考试列表请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T13:34:47.970229", "category": "SYSTEM_STATUS", "message": "获取考试列表完成", "context": {"subject_id": 1, "count": 1}}
+{"timestamp": "2026-03-05T13:34:48.042996", "category": "USER_ACTION", "message": "获取考试列表请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T13:34:48.044786", "category": "SYSTEM_STATUS", "message": "获取考试列表完成", "context": {"subject_id": 1, "count": 1}}
+{"timestamp": "2026-03-05T13:34:49.511750", "category": "USER_ACTION", "message": "获取考试详情请求", "context": {"exam_id": 1}}
+{"timestamp": "2026-03-05T13:34:49.515628", "category": "SYSTEM_STATUS", "message": "获取考试详情完成", "context": {"exam_id": 1, "exam_name": "七二"}}
+{"timestamp": "2026-03-05T13:34:49.840246", "category": "USER_ACTION", "message": "获取题目列表请求", "context": {"exam_id": 1}}
+{"timestamp": "2026-03-05T13:34:49.843789", "category": "SYSTEM_STATUS", "message": "获取题目列表完成", "context": {"exam_id": 1, "count": 1}}
+{"timestamp": "2026-03-05T13:34:50.761106", "category": "USER_ACTION", "message": "提取题目请求", "context": {"image_path": "/static/uploads/e497b9ad-23f2-41e2-b02a-e8752539ddd8.jpg", "exam_id": "1"}}

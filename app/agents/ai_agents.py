@@ -6,16 +6,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from datetime import datetime
+from logger import logger, LOG_CATEGORIES
+
 class AIAgent:
     def __init__(self):
         # 从环境变量获取配置
+        api_key = os.getenv('AI_API_KEY', 'your-api-key-here')
+        api_base = os.getenv('AI_API_BASE', 'https://api.openai.com/v1')  # 默认使用OpenAI格式
+        
+        # 创建OpenAI客户端
         self.client = OpenAI(
-            api_key=os.getenv('AI_API_KEY', 'your-api-key-here'),
-            base_url=os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            api_key=api_key,
+            base_url=api_base
         )
-        self.vision_model = os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
-        self.grading_model = os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
-        self.analysis_model = os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+        
+        # 默认模型设置（兼容OpenAI格式）
+        self.vision_model = os.getenv('AI_MODEL_VISION', 'gpt-4o')  # OpenAI视觉模型
+        self.grading_model = os.getenv('AI_MODEL_GRADING', 'gpt-3.5-turbo')  # OpenAI基础模型
+        self.analysis_model = os.getenv('AI_MODEL_ANALYSIS', 'gpt-4')  # OpenAI高级模型
         
         # 尝试从数据库获取配置（延迟导入避免循环依赖）
         try:
@@ -36,21 +45,88 @@ class AIAgent:
                         self.grading_model = record.value
                     elif record.key == 'model_analysis' and record.value:
                         self.analysis_model = record.value
-        except Exception:
+        except Exception as e:
             # 如果导入失败或数据库不可用，使用环境变量
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '加载设置失败', error=str(e))
             pass
     
+    def _get_timestamp(self):
+        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
     def call_api(self, messages, model=None):
+        # 每次调用API时重新读取最新设置
+        self._load_settings()
+        
         model = model or self.grading_model
         try:
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'AI API 调用开始', model=model, messages=messages)
+            
+            # 检查消息中是否包含图片
+            has_image = any('image_url' in part for msg in messages for part in msg.get('content', []) if isinstance(part, dict))
+            
+            # 对于包含图片的请求，确保使用正确的API参数
             response = self.client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.3
+                temperature=0.3,
+                # 对于视觉模型，可能需要额外的参数
+                max_tokens=2000 if has_image else 1000,
+                # 确保API调用支持图片输入
+                stream=False
             )
-            return response.choices[0].message.content
+            
+            content = response.choices[0].message.content
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'AI API 调用完成', model=model, content=content)
+            
+            return content
         except Exception as e:
-            return f"API Error: {str(e)}"
+            error_msg = f"API Error: {str(e)}"
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AI API 调用失败', error=str(e))
+            # 返回错误信息，让前端知道API调用失败
+            if has_image:
+                return '''{
+                    "is_exam_paper": false,
+                    "items": [],
+                    "error": "%s"
+                }''' % error_msg
+            return error_msg
+    
+    def _load_settings(self):
+        """加载最新的设置"""
+        try:
+            from app.models import Setting
+            from app import db
+            
+            # 只在应用上下文存在时获取设置
+            if db.session.bind:
+                setting_records = Setting.query.all()
+                # 收集所有设置
+                settings = {}
+                for record in setting_records:
+                    settings[record.key] = record.value
+                
+                # 如果有API密钥和基础URL，重新创建客户端
+                if 'api_key' in settings and 'api_base' in settings:
+                    self.client = OpenAI(
+                        api_key=settings['api_key'],
+                        base_url=settings['api_base']
+                    )
+                elif 'api_key' in settings:
+                    self.client.api_key = settings['api_key']
+                elif 'api_base' in settings:
+                    self.client.base_url = settings['api_base']
+                
+                # 更新模型设置
+                if 'model_vision' in settings:
+                    self.vision_model = settings['model_vision']
+                if 'model_grading' in settings:
+                    self.grading_model = settings['model_grading']
+                if 'model_analysis' in settings:
+                    self.analysis_model = settings['model_analysis']
+        except Exception as e:
+            # 如果导入失败或数据库不可用，使用环境变量
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '加载设置失败', error=str(e))
+            pass
     
     def encode_image(self, image_path):
         with open(image_path, 'rb') as f:
@@ -79,36 +155,71 @@ class VisionAgent(AIAgent):
 注意：只返回JSON，不要包含任何其他文字。"""
 
     def analyze(self, image_path, custom_prompt=None):
-        base64_image = self.encode_image(image_path)
-        
-        messages = [
-            {
-                "role": "system",
-                "content": custom_prompt or self.DEFAULT_PROMPT
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_image}"
-                        }
-                    }
-                ]
-            }
-        ]
-        
-        result = self.call_api(messages, model=self.vision_model)
-        
         try:
-            result_json = json.loads(result)
-            return result_json
-        except:
+            # 检查文件是否存在
+            if not os.path.exists(image_path):
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片文件不存在', image_path=image_path)
+                return {
+                    "is_exam_paper": False,
+                    "items": []
+                }
+            
+            # 编码图片
+            base64_image = self.encode_image(image_path)
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '图片编码成功', image_path=image_path)
+            
+            # 构建消息
+            messages = [
+                {
+                    "role": "system",
+                    "content": custom_prompt or self.DEFAULT_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            # 调用API
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '视觉模型API调用开始', model=self.vision_model)
+            result = self.call_api(messages, model=self.vision_model)
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], '视觉模型API调用完成', model=self.vision_model)
+            
+            # 解析结果
+            try:
+                result_json = json.loads(result)
+                # 确保返回的JSON格式正确
+                if isinstance(result_json, dict):
+                    if "is_exam_paper" not in result_json:
+                        result_json["is_exam_paper"] = False
+                    if "items" not in result_json:
+                        result_json["items"] = []
+                    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '图片识别成功', is_exam_paper=result_json.get('is_exam_paper'), item_count=len(result_json.get('items', [])))
+                    return result_json
+                else:
+                    logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片识别结果格式错误', raw_response=result)
+                    return {
+                        "is_exam_paper": False,
+                        "items": []
+                    }
+            except Exception as e:
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片识别JSON解析失败', error=str(e), raw_response=result)
+                return {
+                    "is_exam_paper": False,
+                    "items": []
+                }
+        except Exception as e:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片识别过程失败', error=str(e))
             return {
                 "is_exam_paper": False,
-                "items": [],
-                "raw_response": result
+                "items": []
             }
 
 

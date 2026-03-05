@@ -1,0 +1,2 @@
+{"timestamp": "2026-03-05T12:35:03.152529", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_123503.txt", "context": {}}
+{"timestamp": "2026-03-05T12:35:03.154045", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}

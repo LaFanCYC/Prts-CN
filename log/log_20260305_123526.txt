@@ -1,0 +1,17 @@
+{"timestamp": "2026-03-05T12:35:26.889966", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_123526.txt", "context": {}}
+{"timestamp": "2026-03-05T12:35:26.890471", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T12:35:26.892985", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_123526.txt", "context": {}}
+{"timestamp": "2026-03-05T12:35:26.893553", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T12:35:26.900112", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_123526.txt", "context": {}}
+{"timestamp": "2026-03-05T12:35:26.900112", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T12:36:11.493248", "category": "USER_ACTION", "message": "获取学科列表请求", "context": {}}
+{"timestamp": "2026-03-05T12:36:11.494814", "category": "SYSTEM_STATUS", "message": "获取学科列表完成", "context": {"count": 1}}
+{"timestamp": "2026-03-05T12:36:12.209243", "category": "USER_ACTION", "message": "获取学科详情请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T12:36:12.210257", "category": "SYSTEM_STATUS", "message": "获取学科详情完成", "context": {"subject_id": 1, "subject_name": "生物"}}
+{"timestamp": "2026-03-05T12:36:12.215129", "category": "USER_ACTION", "message": "获取考试列表请求", "context": {"subject_id": 1}}
+{"timestamp": "2026-03-05T12:36:12.218228", "category": "SYSTEM_STATUS", "message": "获取考试列表完成", "context": {"subject_id": 1, "count": 1}}
+{"timestamp": "2026-03-05T12:36:13.661838", "category": "USER_ACTION", "message": "获取考试详情请求", "context": {"exam_id": 1}}
+{"timestamp": "2026-03-05T12:36:13.663503", "category": "SYSTEM_STATUS", "message": "获取考试详情完成", "context": {"exam_id": 1, "exam_name": "七二"}}
+{"timestamp": "2026-03-05T12:36:13.668237", "category": "USER_ACTION", "message": "获取题目列表请求", "context": {"exam_id": 1}}
+{"timestamp": "2026-03-05T12:36:13.669765", "category": "SYSTEM_STATUS", "message": "获取题目列表完成", "context": {"exam_id": 1, "count": 1}}
+{"timestamp": "2026-03-05T12:36:16.979294", "category": "USER_ACTION", "message": "批量评分请求", "context": {"exam_id": 1}}

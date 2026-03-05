@@ -8,6 +8,7 @@ import os
 import uuid
 from datetime import datetime
 import json
+from logger import logger, LOG_CATEGORIES
 
 api = Blueprint('api', __name__)
 
@@ -19,51 +20,66 @@ def allowed_file(filename):
 
 @api.route('/subjects', methods=['GET'])
 def get_subjects():
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取学科列表请求')
     subjects = Subject.query.all()
-    return jsonify([s.to_dict() for s in subjects])
+    result = [s.to_dict() for s in subjects]
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取学科列表完成', count=len(result))
+    return jsonify(result)
 
 
 @api.route('/subjects', methods=['POST'])
 def create_subject():
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '创建学科请求', data=request.get_json())
     data = request.get_json()
     subject = Subject(name=data.get('name'))
     db.session.add(subject)
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '创建学科完成', subject_id=subject.id, subject_name=subject.name)
     return jsonify(subject.to_dict()), 201
 
 
 @api.route('/subjects/<int:subject_id>', methods=['GET'])
 def get_subject(subject_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取学科详情请求', subject_id=subject_id)
     subject = Subject.query.get_or_404(subject_id)
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取学科详情完成', subject_id=subject.id, subject_name=subject.name)
     return jsonify(subject.to_dict())
 
 
 @api.route('/subjects/<int:subject_id>', methods=['PUT'])
 def update_subject(subject_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '更新学科请求', subject_id=subject_id, data=request.get_json())
     subject = Subject.query.get_or_404(subject_id)
     data = request.get_json()
     subject.name = data.get('name', subject.name)
     subject.analysis_report = data.get('analysis_report', subject.analysis_report)
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新学科完成', subject_id=subject.id, subject_name=subject.name)
     return jsonify(subject.to_dict())
 
 
 @api.route('/subjects/<int:subject_id>', methods=['DELETE'])
 def delete_subject(subject_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '删除学科请求', subject_id=subject_id)
     subject = Subject.query.get_or_404(subject_id)
     db.session.delete(subject)
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除学科完成', subject_id=subject_id)
     return jsonify({'message': 'Subject deleted'})
 
 
 @api.route('/subjects/<int:subject_id>/exams', methods=['GET'])
 def get_exams(subject_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取考试列表请求', subject_id=subject_id)
     exams = Exam.query.filter_by(subject_id=subject_id).order_by(Exam.date.desc()).all()
-    return jsonify([e.to_dict() for e in exams])
+    result = [e.to_dict() for e in exams]
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取考试列表完成', subject_id=subject_id, count=len(result))
+    return jsonify(result)
 
 
 @api.route('/exams', methods=['POST'])
 def create_exam():
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '创建考试请求', data=request.get_json())
     data = request.get_json()
     exam = Exam(
         subject_id=data.get('subject_id'),
@@ -72,17 +88,21 @@ def create_exam():
     )
     db.session.add(exam)
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '创建考试完成', exam_id=exam.id, exam_name=exam.name)
     return jsonify(exam.to_dict()), 201
 
 
 @api.route('/exams/<int:exam_id>', methods=['GET'])
 def get_exam(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取考试详情请求', exam_id=exam_id)
     exam = Exam.query.get_or_404(exam_id)
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取考试详情完成', exam_id=exam.id, exam_name=exam.name)
     return jsonify(exam.to_dict())
 
 
 @api.route('/exams/<int:exam_id>', methods=['PUT'])
 def update_exam(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '更新考试请求', exam_id=exam_id, data=request.get_json())
     exam = Exam.query.get_or_404(exam_id)
     data = request.get_json()
     exam.name = data.get('name', exam.name)
@@ -90,31 +110,40 @@ def update_exam(exam_id):
     if 'date' in data:
         exam.date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新考试完成', exam_id=exam.id, exam_name=exam.name)
     return jsonify(exam.to_dict())
 
 
 @api.route('/exams/<int:exam_id>', methods=['DELETE'])
 def delete_exam(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '删除考试请求', exam_id=exam_id)
     exam = Exam.query.get_or_404(exam_id)
     db.session.delete(exam)
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除考试完成', exam_id=exam_id)
     return jsonify({'message': 'Exam deleted'})
 
 
 @api.route('/exams/<int:exam_id>/questions', methods=['GET'])
 def get_questions(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取题目列表请求', exam_id=exam_id)
     questions = Question.query.filter_by(exam_id=exam_id).order_by(Question.id).all()
-    return jsonify([q.to_dict() for q in questions])
+    result = [q.to_dict() for q in questions]
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取题目列表完成', exam_id=exam_id, count=len(result))
+    return jsonify(result)
 
 
 @api.route('/questions/<int:question_id>', methods=['GET'])
 def get_question(question_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '获取题目详情请求', question_id=question_id)
     question = Question.query.get_or_404(question_id)
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取题目详情完成', question_id=question.id)
     return jsonify(question.to_dict())
 
 
 @api.route('/questions/<int:question_id>', methods=['PUT'])
 def update_question(question_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '更新题目请求', question_id=question_id, data=request.get_json())
     question = Question.query.get_or_404(question_id)
     data = request.get_json()
     
@@ -140,18 +169,24 @@ def update_question(question_id):
         question.feedback = data['feedback']
     
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新题目完成', question_id=question.id)
     return jsonify(question.to_dict())
 
 
 @api.route('/upload', methods=['POST'])
 def upload_image():
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '文件上传请求', filename=request.files.get('file', {}).filename, exam_id=request.form.get('exam_id'))
+    
     if 'file' not in request.files:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '文件上传失败', error='No file part')
         return jsonify({'error': 'No file part'}), 400
     
     file = request.files['file']
     exam_id = request.form.get('exam_id')
+    extract = request.form.get('extract', 'false').lower() == 'true'
     
     if file.filename == '':
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '文件上传失败', error='No selected file')
         return jsonify({'error': 'No selected file'}), 400
     
     if file and allowed_file(file.filename):
@@ -165,36 +200,56 @@ def upload_image():
         file.save(filepath)
         
         relative_path = f"/static/uploads/{unique_filename}"
-        
-        vision_agent = VisionAgent()
-        custom_prompt = get_prompt('vision')
-        vision_result = vision_agent.analyze(filepath, custom_prompt)
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '文件保存成功', filepath=relative_path)
         
         questions_data = []
-        if vision_result.get('is_exam_paper'):
-            for item in vision_result.get('items', []):
+        vision_result = {}
+        
+        # 只有当extract为true时才提取题目
+        if extract:
+            vision_agent = VisionAgent()
+            custom_prompt = get_prompt('vision')
+            vision_result = vision_agent.analyze(filepath, custom_prompt)
+            
+            if vision_result.get('is_exam_paper'):
+                for item in vision_result.get('items', []):
+                    question = Question(
+                        exam_id=exam_id,
+                        question_index=item.get('index', ''),
+                        ocr_text=item.get('text', ''),
+                        coordinates=json.dumps(item.get('bbox', [])),
+                        image_path=relative_path
+                    )
+                    db.session.add(question)
+                    questions_data.append(question)
+                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '试卷识别成功', question_count=len(questions_data))
+            else:
+                # 如果未检测到试卷，创建一个默认题目
                 question = Question(
                     exam_id=exam_id,
-                    question_index=item.get('index', ''),
-                    ocr_text=item.get('text', ''),
-                    coordinates=json.dumps(item.get('bbox', [])),
+                    question_index='1',
+                    ocr_text='未检测到题目，请手动输入',
+                    coordinates=json.dumps([]),
                     image_path=relative_path
                 )
                 db.session.add(question)
                 questions_data.append(question)
+                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '未检测到试卷，创建默认题目')
         else:
-            # 如果未检测到试卷，创建一个默认题目
+            # 不提取题目，只创建一个默认题目
             question = Question(
                 exam_id=exam_id,
                 question_index='1',
-                ocr_text='未检测到题目，请手动输入',
+                ocr_text='请点击"提取题目"按钮提取题目',
                 coordinates=json.dumps([]),
                 image_path=relative_path
             )
             db.session.add(question)
             questions_data.append(question)
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '文件上传成功，等待提取题目')
         
         db.session.commit()
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目数据保存成功', question_count=len(questions_data))
         
         return jsonify({
             'image_path': relative_path,
@@ -202,11 +257,97 @@ def upload_image():
             'questions': [q.to_dict() for q in questions_data]
         })
     
+    logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '文件上传失败', error='Invalid file type')
     return jsonify({'error': 'Invalid file type'}), 400
+
+
+@api.route('/extract-questions', methods=['POST'])
+def extract_questions():
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '提取题目请求', image_path=request.form.get('image_path'), exam_id=request.form.get('exam_id'))
+    
+    image_path = request.form.get('image_path')
+    exam_id = request.form.get('exam_id')
+    
+    if not image_path:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No image path provided')
+        return jsonify({'error': 'No image path provided'}), 400
+    
+    if not exam_id:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='No exam id provided')
+        return jsonify({'error': 'No exam id provided'}), 400
+    
+    # 转换相对路径为绝对路径
+    if image_path.startswith('/'):
+        image_path = image_path[1:]  # 移除开头的斜杠
+    
+    # 构建正确的路径：app/static/uploads/filename
+    # 确保路径格式正确，避免os.path.join的问题
+    if not image_path.startswith('app/'):
+        # 直接拼接路径，确保app目录被正确添加
+        image_path = 'app/' + image_path
+    
+    # 使用应用根目录作为基础路径
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
+    # 构建绝对路径
+    absolute_path = os.path.join(project_root, image_path.replace('/', os.sep))
+    
+    if not os.path.exists(absolute_path):
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='Image file not found', image_path=absolute_path)
+        return jsonify({'error': 'Image file not found'}), 404
+    
+    # 提取题目
+    vision_agent = VisionAgent()
+    custom_prompt = get_prompt('vision')
+    vision_result = vision_agent.analyze(absolute_path, custom_prompt)
+    
+    # 检查是否有错误
+    if vision_result.get('error'):
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error=vision_result.get('error'))
+        return jsonify({'error': vision_result.get('error')}), 500
+    
+    questions_data = []
+    if vision_result.get('is_exam_paper'):
+        # 删除现有的题目
+        Question.query.filter_by(exam_id=exam_id).delete()
+        
+        for item in vision_result.get('items', []):
+            question = Question(
+                exam_id=exam_id,
+                question_index=item.get('index', ''),
+                ocr_text=item.get('text', ''),
+                coordinates=json.dumps(item.get('bbox', [])),
+                image_path=request.form.get('image_path')
+            )
+            db.session.add(question)
+            questions_data.append(question)
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '试卷识别成功', question_count=len(questions_data))
+    else:
+        # 如果未检测到试卷，创建一个默认题目
+        question = Question(
+            exam_id=exam_id,
+            question_index='1',
+            ocr_text='未检测到题目，请手动输入',
+            coordinates=json.dumps([]),
+            image_path=request.form.get('image_path')
+        )
+        db.session.add(question)
+        questions_data.append(question)
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '未检测到试卷，创建默认题目')
+    
+    db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目数据保存成功', question_count=len(questions_data))
+    
+    return jsonify({
+        'vision_result': vision_result,
+        'questions': [q.to_dict() for q in questions_data]
+    })
 
 
 @api.route('/analyze-metadata/<int:question_id>', methods=['POST'])
 def analyze_metadata(question_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '分析题目元数据请求', question_id=question_id)
+    
     question = Question.query.get_or_404(question_id)
     
     metadata_agent = MetadataAgent()
@@ -217,11 +358,14 @@ def analyze_metadata(question_id):
     question.difficulty = result.get('difficulty', 3)
     db.session.commit()
     
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目元数据分析完成', question_id=question_id, knowledge_tags=result.get('knowledge_tags', []), difficulty=result.get('difficulty', 3))
     return jsonify(question.to_dict())
 
 
 @api.route('/grade/<int:question_id>', methods=['POST'])
 def grade_question(question_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '题目评分请求', question_id=question_id)
+    
     question = Question.query.get_or_404(question_id)
     
     grading_agent = GradingAgent()
@@ -238,11 +382,14 @@ def grade_question(question_id):
     question.feedback = result.get('feedback', '')
     db.session.commit()
     
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目评分完成', question_id=question_id, score=result.get('user_score', 0), max_score=question.max_score)
     return jsonify(question.to_dict())
 
 
 @api.route('/grade-all/<int:exam_id>', methods=['POST'])
 def grade_all_questions(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '批量评分请求', exam_id=exam_id)
+    
     exam = Exam.query.get_or_404(exam_id)
     questions = Question.query.filter_by(exam_id=exam_id).all()
     
@@ -263,11 +410,14 @@ def grade_all_questions(exam_id):
         results.append(question.to_dict())
     
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '批量评分完成', exam_id=exam_id, question_count=len(questions))
     return jsonify(results)
 
 
 @api.route('/analyze-exam/<int:exam_id>', methods=['POST'])
 def analyze_exam(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '考试分析请求', exam_id=exam_id)
+    
     exam = Exam.query.get_or_404(exam_id)
     subject = Subject.query.get(exam.subject_id)
     questions = Question.query.filter_by(exam_id=exam_id).all()
@@ -286,6 +436,7 @@ def analyze_exam(exam_id):
     exam.analysis_report = json.dumps(result, ensure_ascii=False)
     db.session.commit()
     
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '考试分析完成', exam_id=exam_id, exam_name=exam.name)
     return jsonify(result)
 
 
@@ -360,8 +511,15 @@ def get_settings():
 @api.route('/settings', methods=['PUT'])
 def update_settings():
     data = request.get_json()
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '更新设置请求', settings=list(data.keys()))
     
     for key, value in data.items():
+        # 不记录API密钥等敏感信息
+        if key != 'api_key':
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新设置', key=key, value=value)
+        else:
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新设置', key=key, value='[REDACTED]')
+        
         setting = Setting.query.filter_by(key=key).first()
         if setting:
             setting.value = value
@@ -373,6 +531,7 @@ def update_settings():
             db.session.add(setting)
     
     db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '设置更新完成')
     return jsonify({'message': 'Settings updated successfully'})
 
 

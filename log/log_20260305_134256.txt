@@ -1,0 +1,3 @@
+{"timestamp": "2026-03-05T13:42:56.459139", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_134256.txt", "context": {}}
+{"timestamp": "2026-03-05T13:42:56.461583", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
+{"timestamp": "2026-03-05T13:42:57.216447", "category": "SYSTEM_STATUS", "message": "服务启动: http://127.0.0.1:5000", "context": {}}

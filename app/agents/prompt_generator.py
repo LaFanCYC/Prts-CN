@@ -46,5 +46,6 @@ def init_prompts():
     db.session.commit()
 
 def get_prompt(name):
+    """获取最新的Prompt设置"""
     prompt = Prompt.query.filter_by(name=name, is_active=True).first()
     return prompt.system_prompt if prompt else None
