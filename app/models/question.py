@@ -12,6 +12,8 @@ class Question(db.Model):
     ocr_text = db.Column(db.Text, default='')
     coordinates = db.Column(db.Text, default='[]')
     user_answer_text = db.Column(db.Text, default='')
+    student_answer = db.Column(db.Text, default='')
+    analysis = db.Column(db.Text, default='')
     user_answer_image_path = db.Column(db.String(500), default='')
     standard_answer = db.Column(db.Text, default='')
     knowledge_tags = db.Column(db.Text, default='[]')
@@ -49,6 +51,8 @@ class Question(db.Model):
             'ocr_text': self.ocr_text,
             'coordinates': self.get_coordinates(),
             'user_answer_text': self.user_answer_text,
+            'student_answer': self.student_answer,
+            'analysis': self.analysis,
             'user_answer_image_path': self.user_answer_image_path,
             'standard_answer': self.standard_answer,
             'knowledge_tags': self.get_knowledge_tags(),

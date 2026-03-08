@@ -1,5 +1,0 @@
-{"timestamp": "2026-03-05T13:34:52.184313", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_133452.txt", "context": {}}
-{"timestamp": "2026-03-05T13:34:52.185892", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
-{"timestamp": "2026-03-05T13:34:52.185892", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
-{"timestamp": "2026-03-05T13:36:44.893464", "category": "USER_ACTION", "message": "获取学科列表请求", "context": {}}
-{"timestamp": "2026-03-05T13:36:44.897068", "category": "SYSTEM_STATUS", "message": "获取学科列表完成", "context": {"count": 1}}

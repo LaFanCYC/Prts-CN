@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'http://127.0.0.1:5000/api';
 
 let currentSubjectId = null;
 let currentExamId = null;
@@ -283,25 +283,68 @@ function renderQuestionsList() {
             <div class="question-header">
                 <span class="question-index">第 ${q.question_index} 题</span>
                 <div class="question-score">
-                    <input type="number" class="max-score-input" 
-                           value="${q.max_score || 10}" 
+                    <span class="score-tag">满分: ${q.max_score || 10}分</span>
+                    <input type="number" class="max-score-input"
+                           value="${q.max_score || 10}"
                            data-field="max_score"
                            data-index="${index}"
                            min="0" step="0.5"> 分
+                    <button class="btn-delete-question" data-index="${index}" title="删除题目">🗑️</button>
                 </div>
             </div>
             <div class="question-text">${q.ocr_text || '未识别到题干'}</div>
-            <textarea class="answer-input" 
-                      placeholder="请输入作答内容..." 
-                      data-field="user_answer_text"
-                      data-index="${index}">${q.user_answer_text || ''}</textarea>
+
+            <div class="ocr-info">
+                ${q.student_answer ? `
+                <div class="ocr-student-answer">
+                    <span class="ocr-label">【OCR识别】学生答案：</span>
+                    <span class="ocr-value">${q.student_answer}</span>
+                </div>
+                ` : ''}
+                ${q.knowledge_tags && q.knowledge_tags.length > 0 ? `
+                <div class="ocr-knowledge">
+                    <span class="ocr-label">【OCR识别】知识点：</span>
+                    <span class="ocr-value">${q.knowledge_tags.join(', ')}</span>
+                </div>
+                ` : ''}
+                ${q.difficulty ? `
+                <div class="ocr-difficulty">
+                    <span class="ocr-label">【OCR识别】难度：</span>
+                    <span class="ocr-value">${q.difficulty}</span>
+                </div>
+                ` : ''}
+            </div>
+
+            <div class="answer-section">
+                <label class="answer-label">学生作答：</label>
+                <textarea class="answer-input"
+                          placeholder="请输入作答内容..."
+                          data-field="user_answer_text"
+                          data-index="${index}">${q.user_answer_text || ''}</textarea>
+            </div>
+            
+            <div class="standard-answer-section">
+                <label class="answer-label">标准答案：</label>
+                <textarea class="standard-answer-input" 
+                          placeholder="点击开始批改后自动生成，也可手动输入..." 
+                          data-field="standard_answer"
+                          data-index="${index}">${q.standard_answer || ''}</textarea>
+            </div>
+            
+            <div class="analysis-section">
+                <label class="answer-label">解析：</label>
+                <textarea class="analysis-input" 
+                          placeholder="点击开始批改后自动生成，也可手动输入..." 
+                          data-field="analysis"
+                          data-index="${index}">${q.feedback || ''}</textarea>
+            </div>
+            
             ${q.user_score !== null ? `
                 <div class="question-result">
                     <div class="score-display">
                         <span>得分：</span>
                         <span class="score-value">${q.user_score} / ${q.max_score}</span>
                     </div>
-                    ${q.feedback ? `<p class="feedback-text">${q.feedback}</p>` : ''}
                 </div>
             ` : ''}
         </div>
@@ -344,6 +387,63 @@ function renderQuestionsList() {
         });
         
         input.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    list.querySelectorAll('.standard-answer-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const value = e.target.value;
+            
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ standard_answer: value })
+            });
+            
+            currentQuestions[index].standard_answer = value;
+        });
+        
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    list.querySelectorAll('.analysis-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const value = e.target.value;
+            
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ feedback: value })
+            });
+            
+            currentQuestions[index].feedback = value;
+        });
+        
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    list.querySelectorAll('.btn-delete-question').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const question = currentQuestions[index];
+            
+            if (!confirm(`确定要删除第 ${question.question_index} 题吗？`)) {
+                return;
+            }
+            
+            try {
+                await apiRequest(`/questions/${question.id}`, {
+                    method: 'DELETE'
+                });
+                
+                currentQuestions.splice(index, 1);
+                renderQuestionsList();
+                alert('题目已删除');
+            } catch (error) {
+                console.error('删除题目失败:', error);
+                alert('删除题目失败: ' + error.message);
+            }
+        });
     });
 }
 
@@ -840,9 +940,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (result.questions && result.questions.length > 0) {
+                console.log('提取到的题目数量:', result.questions.length);
+                console.log('题目数据:', result.questions);
                 currentQuestions = result.questions;
                 renderQuestionsList();
-                alert('题目提取完成！');
+                alert('题目提取完成！共提取到 ' + result.questions.length + ' 道题目');
             } else {
                 alert('未检测到题目，请检查图片是否清晰');
             }
@@ -888,6 +990,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.getElementById('extract-questions-btn').addEventListener('click', extractQuestions);
+    
+    document.getElementById('add-question-btn').addEventListener('click', () => {
+        showModal('add-question');
+    });
+    
+    document.getElementById('cancel-add-question-btn').addEventListener('click', () => {
+        hideModal('add-question');
+    });
+    
+    document.getElementById('add-question-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const questionData = {
+            question_index: document.getElementById('new-question-index').value,
+            ocr_text: document.getElementById('new-question-text').value,
+            max_score: parseInt(document.getElementById('new-question-score').value) || 5,
+            standard_answer: document.getElementById('new-question-answer').value,
+            difficulty: document.getElementById('new-question-difficulty').value
+        };
+        
+        try {
+            const newQuestion = await apiRequest(`/exams/${currentExamId}/questions`, {
+                method: 'POST',
+                body: JSON.stringify(questionData)
+            });
+            
+            currentQuestions.push(newQuestion);
+            renderQuestionsList();
+            hideModal('add-question');
+            document.getElementById('add-question-form').reset();
+            alert('题目添加成功！');
+        } catch (error) {
+            console.error('添加题目失败:', error);
+            alert('添加题目失败: ' + error.message);
+        }
+    });
     
     document.getElementById('start-grading-btn').addEventListener('click', async () => {
         if (currentQuestions.length === 0) {

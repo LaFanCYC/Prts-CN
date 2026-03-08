@@ -348,6 +348,15 @@ body {
     gap: 8px;
 }
 
+.question-item .score-tag {
+    background: #e7f5ff;
+    color: #1971c2;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
 .question-item .max-score-input {
     width: 60px;
     padding: 4px 8px;
@@ -355,6 +364,20 @@ body {
     border-radius: var(--radius-sm);
     font-size: 14px;
     text-align: center;
+}
+
+.btn-delete-question {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.btn-delete-question:hover {
+    opacity: 1;
 }
 
 .question-item .question-text {
@@ -366,6 +389,36 @@ body {
     text-overflow: ellipsis;
 }
 
+.question-item .ocr-info {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.question-item .ocr-student-answer,
+.question-item .ocr-knowledge,
+.question-item .ocr-difficulty {
+    margin-bottom: 6px;
+}
+
+.question-item .ocr-student-answer:last-child,
+.question-item .ocr-knowledge:last-child,
+.question-item .ocr-difficulty:last-child {
+    margin-bottom: 0;
+}
+
+.question-item .ocr-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.question-item .ocr-value {
+    color: #212529;
+}
+
 .question-item .answer-input {
     width: 100%;
     padding: 10px;
@@ -374,6 +427,39 @@ body {
     font-size: 14px;
     resize: vertical;
     min-height: 60px;
+}
+
+.question-item .answer-section,
+.question-item .standard-answer-section,
+.question-item .analysis-section {
+    margin-top: 12px;
+}
+
+.question-item .answer-label {
+    display: block;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.question-item .standard-answer-input,
+.question-item .analysis-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #4CAF50;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    resize: vertical;
+    min-height: 60px;
+    background-color: #f9fff9;
+}
+
+.question-item .standard-answer-input:focus,
+.question-item .analysis-input:focus {
+    outline: none;
+    border-color: #45a049;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
 }
 
 .question-item .question-result {

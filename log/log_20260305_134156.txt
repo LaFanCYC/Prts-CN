@@ -1,6 +1,0 @@
-{"timestamp": "2026-03-05T13:41:56.448694", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_134156.txt", "context": {}}
-{"timestamp": "2026-03-05T13:41:56.450235", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
-{"timestamp": "2026-03-05T13:41:56.450235", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_134156.txt", "context": {}}
-{"timestamp": "2026-03-05T13:41:56.450235", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}
-{"timestamp": "2026-03-05T13:41:56.461564", "category": "SYSTEM_STATUS", "message": "日志文件创建成功: log_20260305_134156.txt", "context": {}}
-{"timestamp": "2026-03-05T13:41:56.462569", "category": "SYSTEM_STATUS", "message": "应用程序启动", "context": {}}

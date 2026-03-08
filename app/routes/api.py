@@ -173,6 +173,42 @@ def update_question(question_id):
     return jsonify(question.to_dict())
 
 
+@api.route('/exams/<int:exam_id>/questions', methods=['POST'])
+def create_question(exam_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '创建题目请求', exam_id=exam_id, data=request.get_json())
+    data = request.get_json()
+    
+    question = Question(
+        exam_id=exam_id,
+        question_index=data.get('question_index', ''),
+        ocr_text=data.get('ocr_text', ''),
+        max_score=data.get('max_score', 5),
+        coordinates=json.dumps(data.get('coordinates', [])),
+        knowledge_tags=json.dumps(data.get('knowledge_tags', [])),
+        difficulty=data.get('difficulty', 'medium'),
+        user_answer_text=data.get('user_answer_text', ''),
+        standard_answer=data.get('standard_answer', ''),
+        user_score=data.get('user_score'),
+        feedback=data.get('feedback', '')
+    )
+    
+    db.session.add(question)
+    db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '创建题目完成', question_id=question.id)
+    return jsonify(question.to_dict()), 201
+
+
+@api.route('/questions/<int:question_id>', methods=['DELETE'])
+def delete_question(question_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '删除题目请求', question_id=question_id)
+    question = Question.query.get_or_404(question_id)
+    
+    db.session.delete(question)
+    db.session.commit()
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除题目完成', question_id=question_id)
+    return jsonify({'message': 'Question deleted successfully'})
+
+
 @api.route('/upload', methods=['POST'])
 def upload_image():
     logger.log(LOG_CATEGORIES['USER_ACTION'], '文件上传请求', filename=request.files.get('file', {}).filename, exam_id=request.form.get('exam_id'))
@@ -209,15 +245,22 @@ def upload_image():
         if extract:
             vision_agent = VisionAgent()
             custom_prompt = get_prompt('vision')
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取视觉模型Prompt', prompt=custom_prompt[:200] if custom_prompt else 'None')
             vision_result = vision_agent.analyze(filepath, custom_prompt)
             
             if vision_result.get('is_exam_paper'):
                 for item in vision_result.get('items', []):
                     question = Question(
                         exam_id=exam_id,
-                        question_index=item.get('index', ''),
-                        ocr_text=item.get('text', ''),
-                        coordinates=json.dumps(item.get('bbox', [])),
+                        question_index=item.get('index') or item.get('question_number') or item.get('questionNumber', ''),
+                        ocr_text=item.get('text') or item.get('question_stem') or item.get('questionStem', ''),
+                        student_answer=item.get('student_answer', ''),
+                        analysis=item.get('analysis', ''),
+                        standard_answer=item.get('reference_answer', ''),
+                        knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                        difficulty=int(item.get('difficulty', 3)) if item.get('difficulty') else 3,
+                        max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
+                        coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                         image_path=relative_path
                     )
                     db.session.add(question)
@@ -293,14 +336,24 @@ def extract_questions():
         # 构建绝对路径
         absolute_path = os.path.join(project_root, image_path.replace('/', os.sep))
         
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '构建图片绝对路径', 
+                  original_image_path=request.form.get('image_path'),
+                  processed_image_path=image_path,
+                  project_root=project_root,
+                  absolute_path=absolute_path,
+                  path_exists=os.path.exists(absolute_path))
+        
         if not os.path.exists(absolute_path):
             logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目失败', error='Image file not found', image_path=absolute_path)
             return jsonify({'error': 'Image file not found'}), 404
         
         # 提取题目
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '开始提取题目', image_path=absolute_path)
         vision_agent = VisionAgent()
         custom_prompt = get_prompt('vision')
         vision_result = vision_agent.analyze(absolute_path, custom_prompt)
+        
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '视觉模型分析完成', vision_result=vision_result)
         
         # 检查是否有错误
         if vision_result.get('error'):
@@ -315,9 +368,15 @@ def extract_questions():
             for item in vision_result.get('items', []):
                 question = Question(
                     exam_id=exam_id,
-                    question_index=item.get('index', ''),
-                    ocr_text=item.get('text', ''),
-                    coordinates=json.dumps(item.get('bbox', [])),
+                    question_index=item.get('index') or item.get('question_number') or item.get('questionNumber', ''),
+                    ocr_text=item.get('text') or item.get('question_stem') or item.get('questionStem', ''),
+                    student_answer=item.get('student_answer', ''),
+                    analysis=item.get('analysis', ''),
+                    standard_answer=item.get('reference_answer', ''),
+                    knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                    difficulty=int(item.get('difficulty', 3)) if item.get('difficulty') else 3,
+                    max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
+                    coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                     image_path=request.form.get('image_path')
                 )
                 db.session.add(question)
@@ -344,7 +403,7 @@ def extract_questions():
             'questions': [q.to_dict() for q in questions_data]
         })
     except Exception as e:
-        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目过程中发生未捕获异常', error=str(e), exc_info=True)
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '提取题目过程中发生异常', error=str(e))
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
@@ -397,24 +456,68 @@ def grade_all_questions(exam_id):
     exam = Exam.query.get_or_404(exam_id)
     questions = Question.query.filter_by(exam_id=exam_id).all()
     
+    if not questions:
+        return jsonify([])
+    
     grading_agent = GradingAgent()
     custom_prompt = get_prompt('grading')
     
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def grade_single_question(question):
+        try:
+            result = grading_agent.grade(
+                question.ocr_text,
+                question.user_answer_text,
+                question.max_score,
+                custom_prompt
+            )
+            return question.id, result, None
+        except Exception as e:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'GradingAgent评分失败', error=str(e), question_id=question.id)
+            return question.id, None, str(e)
+
     results = []
+    question_map = {}
+    failed_count = 0
+    error_messages = []
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_question = {executor.submit(grade_single_question, q): q for q in questions}
+
+        for future in as_completed(future_to_question):
+            question_id, result, error = future.result()
+            if error:
+                failed_count += 1
+                error_messages.append(f"题目{question_id}: {error}")
+                question_map[question_id] = {
+                    'standard_answer': '',
+                    'user_score': 0,
+                    'feedback': f'评分失败: {error}'
+                }
+            else:
+                question_map[question_id] = result
+
     for question in questions:
-        result = grading_agent.grade(
-            question.ocr_text,
-            question.user_answer_text,
-            question.max_score,
-            custom_prompt
-        )
+        result = question_map.get(question.id, {})
         question.standard_answer = result.get('standard_answer', '')
         question.user_score = result.get('user_score', 0)
         question.feedback = result.get('feedback', '')
         results.append(question.to_dict())
-    
+
     db.session.commit()
-    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '批量评分完成', exam_id=exam_id, question_count=len(questions))
+
+    if failed_count > 0:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量评分完成但有失败',
+                   exam_id=exam_id,
+                   question_count=len(questions),
+                   failed_count=failed_count,
+                   errors=error_messages[:5])
+    else:
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '批量评分完成',
+                   exam_id=exam_id,
+                   question_count=len(questions))
+
     return jsonify(results)
 
 
