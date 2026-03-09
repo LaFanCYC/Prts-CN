@@ -248,17 +248,18 @@ class JSONProcessor:
     def validate_and_normalize_analysis_result(result: Any) -> Dict:
         """
         验证并规范化Analysis Agent的返回结果
+        支持新格式：exam_name, total_score, total_earned_score, summary
         """
         default = {
+            "exam_name": "考试分析",
+            "total_score": 0,
+            "total_earned_score": 0,
             "summary": "分析生成失败",
             "score_analysis": {
                 "total_score": 0,
-                "user_score": 0,
+                "total_earned_score": 0,
                 "score_rate": "0%"
-            },
-            "strengths": [],
-            "weaknesses": [],
-            "suggestions": []
+            }
         }
 
         if not result:
@@ -270,30 +271,34 @@ class JSONProcessor:
         if not isinstance(result, dict):
             return default
 
-        # 处理score_analysis
-        score_analysis = result.get('score_analysis', {})
-        if isinstance(score_analysis, str):
-            score_analysis = {}
+        exam_name = result.get('exam_name', '')
+        total_score = result.get('total_score', 0)
+        total_earned_score = result.get('total_earned_score', result.get('total_earned_score', 0))
 
-        # 字段名兼容
-        total_score = score_analysis.get('total_score', result.get('total_score', 0))
-        user_score = score_analysis.get('user_score', result.get('user_score', 0))
+        try:
+            total_score = float(total_score) if total_score else 0
+        except (ValueError, TypeError):
+            total_score = 0
 
-        # 计算得分率
-        score_rate = score_analysis.get('score_rate', result.get('score_rate', ''))
-        if not score_rate and total_score > 0:
-            score_rate = f"{(user_score / total_score * 100):.1f}%"
+        try:
+            total_earned_score = float(total_earned_score) if total_earned_score else 0
+        except (ValueError, TypeError):
+            total_earned_score = 0
+
+        score_rate = "0%"
+        if total_score > 0:
+            score_rate = f"{(total_earned_score / total_score * 100):.1f}%"
 
         return {
+            "exam_name": exam_name,
+            "total_score": total_score,
+            "total_earned_score": total_earned_score,
             "summary": result.get('summary', ''),
             "score_analysis": {
                 "total_score": total_score,
-                "user_score": user_score,
+                "total_earned_score": total_earned_score,
                 "score_rate": score_rate
-            },
-            "strengths": result.get('strengths', []),
-            "weaknesses": result.get('weaknesses', []),
-            "suggestions": result.get('suggestions', [])
+            }
         }
 
     @staticmethod

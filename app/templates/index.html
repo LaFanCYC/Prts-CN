@@ -134,32 +134,95 @@
             </header>
             <div class="settings-container">
                 <div class="settings-card">
-                    <h3>AI 配置</h3>
+                    <h3>通用 AI 配置</h3>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label>通用 API 密钥（可选，为空时使用各Agent专用配置）</label>
+                            <input type="password" id="api-key" class="form-input" placeholder="通用 API 密钥">
+                        </div>
+                        <div class="form-group">
+                            <label>通用 API 基础 URL</label>
+                            <input type="url" id="api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Vision Agent（试卷识别）</h3>
                     <div class="settings-form">
                         <div class="form-group">
                             <label>API 密钥</label>
-                            <input type="password" id="api-key" class="form-input" placeholder="输入 API 密钥">
+                            <input type="password" id="vision-api-key" class="form-input" placeholder="Vision Agent 专用 API 密钥">
                         </div>
                         <div class="form-group">
                             <label>API 基础 URL</label>
-                            <input type="url" id="api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                            <input type="url" id="vision-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
                         </div>
                         <div class="form-group">
-                            <label>视觉模型</label>
+                            <label>模型</label>
                             <input type="text" id="model-vision" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                         </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Grading Agent（评分批改）</h3>
+                    <div class="settings-form">
                         <div class="form-group">
-                            <label>批改模型</label>
+                            <label>API 密钥</label>
+                            <input type="password" id="grading-api-key" class="form-input" placeholder="Grading Agent 专用 API 密钥">
+                        </div>
+                        <div class="form-group">
+                            <label>API 基础 URL</label>
+                            <input type="url" id="grading-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
                             <input type="text" id="model-grading" class="form-input" placeholder="如：doubao-seed-2.0-mini">
                         </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Analysis Agent（考试分析）</h3>
+                    <div class="settings-form">
                         <div class="form-group">
-                            <label>分析模型</label>
+                            <label>API 密钥</label>
+                            <input type="password" id="analysis-api-key" class="form-input" placeholder="Analysis Agent 专用 API 密钥">
+                        </div>
+                        <div class="form-group">
+                            <label>API 基础 URL</label>
+                            <input type="url" id="analysis-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
                             <input type="text" id="model-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                         </div>
-                        <div class="settings-actions">
-                            <button class="btn btn-secondary" id="reset-settings-btn">重置默认</button>
-                            <button class="btn btn-primary" id="save-settings-btn">保存设置</button>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Metadata Agent（知识点分析）</h3>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label>API 密钥</label>
+                            <input type="password" id="metadata-api-key" class="form-input" placeholder="Metadata Agent 专用 API 密钥">
                         </div>
+                        <div class="form-group">
+                            <label>API 基础 URL</label>
+                            <input type="url" id="metadata-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                        </div>
+                        <div class="form-group">
+                            <label>模型</label>
+                            <input type="text" id="model-metadata" class="form-input" placeholder="如：doubao-seed-2.0-mini">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <div class="settings-actions">
+                        <button class="btn btn-secondary" id="reset-settings-btn">重置默认</button>
+                        <button class="btn btn-primary" id="save-settings-btn">保存设置</button>
                     </div>
                 </div>
             </div>

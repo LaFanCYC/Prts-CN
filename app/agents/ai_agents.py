@@ -16,61 +16,29 @@ class AIAgent:
     提供API调用、配置管理、错误处理等通用功能
     """
 
-    def __init__(self):
-        api_key = None
-        api_base = None
-        vision_model = None
-        grading_model = None
-        analysis_model = None
-
-        try:
-            from app.models import Setting
-            from app import db
-
-            try:
-                setting_records = Setting.query.all()
-                settings = {record.key: record.value for record in setting_records}
-
-                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AIAgent初始化-从数据库加载设置',
-                          settings_keys=list(settings.keys()))
-
-                api_key = settings.get('api_key')
-                api_base = settings.get('api_base')
-                vision_model = settings.get('model_vision')
-                grading_model = settings.get('model_grading')
-                analysis_model = settings.get('model_analysis')
-
-                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AIAgent初始化-从数据库获取的值',
-                          api_key_exists=bool(api_key),
-                          api_base=api_base,
-                          vision_model=vision_model)
-            except Exception as e:
-                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AIAgent初始化-查询数据库失败', error=str(e))
-        except Exception as e:
-            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AIAgent初始化-导入模块失败', error=str(e))
-
-        api_key = api_key or os.getenv('AI_API_KEY')
-        api_base = api_base or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
-        vision_model = vision_model or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
-        grading_model = grading_model or os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
-        analysis_model = analysis_model or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
-
-        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AIAgent初始化-最终配置',
-                  api_key_prefix=api_key[:10] if api_key else None,
-                  api_base=api_base,
-                  vision_model=vision_model)
+    def __init__(self, agent_type=None):
+        self.agent_type = agent_type
+        self._settings = {}
 
         self.client = OpenAI(
-            api_key=api_key,
-            base_url=api_base
+            api_key='',
+            base_url='https://ark.cn-beijing.volces.com/api/v3'
         )
 
-        self.vision_model = vision_model
-        self.grading_model = grading_model
-        self.analysis_model = analysis_model
+        self.vision_model = 'doubao-seed-2.0-pro'
+        self.grading_model = 'doubao-seed-2.0-mini'
+        self.analysis_model = 'doubao-seed-2.0-pro'
+        self.metadata_model = 'doubao-seed-2.0-mini'
 
         self.json_processor = JSONProcessor()
+
         self._load_settings()
+
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], f'{self.__class__.__name__} 初始化完成',
+                  agent_type=self.agent_type,
+                  api_key_set=bool(self._settings.get('api_key')),
+                  api_base=self._settings.get('api_base'),
+                  model=self._get_current_model())
 
     def _get_timestamp(self):
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -99,9 +67,9 @@ class AIAgent:
     def call_api(self, messages, model=None, response_format=None):
         """
         调用AI API的统一方法
+        注意：不再每次调用都重新加载设置，避免多线程环境下的应用上下文问题
+        设置应在Agent初始化时加载
         """
-        self._load_settings()
-
         model = model or self.grading_model
 
         try:
@@ -130,6 +98,16 @@ class AIAgent:
             response = self.client.chat.completions.create(**params)
 
             content = response.choices[0].message.content
+
+            if content is None:
+                error_msg = "API returned empty content (possibly rate limited)"
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AI API 返回空内容', model=model)
+                return json.dumps({
+                    "error": error_msg,
+                    "is_exam_paper": False,
+                    "items": []
+                })
+
             logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'AI API 调用完成',
                       model=model, content=content[:500] if content else 'Empty')
 
@@ -157,7 +135,9 @@ class AIAgent:
             return error_msg
 
     def _load_settings(self):
-        """加载最新的设置"""
+        """加载最新的设置，支持各Agent独立配置"""
+        settings = {}
+
         try:
             from app.models import Setting
             from app import db
@@ -165,31 +145,69 @@ class AIAgent:
             try:
                 setting_records = Setting.query.all()
                 settings = {record.key: record.value for record in setting_records}
+                self._settings = settings
 
                 logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '从数据库加载设置',
-                          settings_keys=list(settings.keys()))
-
-                api_key = settings.get('api_key')
-                if api_key and api_key.strip():
-                    self.client.api_key = api_key
-
-                api_base = settings.get('api_base')
-                if api_base and api_base.strip():
-                    self.client.base_url = api_base
-
-                if 'model_vision' in settings and settings['model_vision']:
-                    self.vision_model = settings['model_vision']
-                if 'model_grading' in settings and settings['model_grading']:
-                    self.grading_model = settings['model_grading']
-                if 'model_analysis' in settings and settings['model_analysis']:
-                    self.analysis_model = settings['model_analysis']
-
+                          settings_keys=list(settings.keys()),
+                          agent_type=self.agent_type)
             except Exception as e:
-                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '查询数据库失败', error=str(e))
-
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '从数据库加载设置失败，使用环境变量', error=str(e))
         except Exception as e:
-            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '加载设置失败', error=str(e))
-            pass
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '无法访问数据库，使用环境变量', error=str(e))
+
+        if self.agent_type == 'vision':
+            api_key = settings.get('vision_api_key') or settings.get('api_key') or os.getenv('AI_VISION_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings.get('vision_api_base') or settings.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = settings.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+        elif self.agent_type == 'grading':
+            api_key = settings.get('grading_api_key') or settings.get('api_key') or os.getenv('AI_GRADING_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings.get('grading_api_base') or settings.get('api_base') or os.getenv('AI_GRADING_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = settings.get('model_grading') or os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
+        elif self.agent_type == 'analysis':
+            api_key = settings.get('analysis_api_key') or settings.get('api_key') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings.get('analysis_api_base') or settings.get('api_base') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = settings.get('model_analysis') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+        elif self.agent_type == 'metadata':
+            api_key = settings.get('metadata_api_key') or settings.get('api_key') or os.getenv('AI_METADATA_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings.get('metadata_api_base') or settings.get('api_base') or os.getenv('AI_METADATA_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = settings.get('model_metadata') or os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini')
+        else:
+            api_key = settings.get('api_key') or os.getenv('AI_API_KEY')
+            api_base = settings.get('api_base') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = None
+
+        if api_key and api_key.strip():
+            self.client.api_key = api_key
+
+        if api_base and api_base.strip():
+            self.client.base_url = api_base
+
+        if model and model.strip():
+            if self.agent_type == 'vision':
+                self.vision_model = model
+            elif self.agent_type == 'grading':
+                self.grading_model = model
+            elif self.agent_type == 'analysis':
+                self.analysis_model = model
+            elif self.agent_type == 'metadata':
+                self.metadata_model = model
+
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '设置加载完成',
+                  agent_type=self.agent_type,
+                  api_key_set=bool(api_key),
+                  api_base=api_base)
+
+    def _get_current_model(self):
+        """获取当前Agent使用的模型"""
+        if self.agent_type == 'vision':
+            return self.vision_model
+        elif self.agent_type == 'grading':
+            return self.grading_model
+        elif self.agent_type == 'analysis':
+            return self.analysis_model
+        elif self.agent_type == 'metadata':
+            return self.metadata_model
+        return None
 
     def encode_image(self, image_path):
         """将图片文件编码为base64字符串"""
@@ -202,6 +220,9 @@ class VisionAgent(AIAgent):
     试卷识别Agent
     负责从试卷图片中提取题目信息
     """
+
+    def __init__(self):
+        super().__init__(agent_type='vision')
 
     DEFAULT_PROMPT = """你是一个专业的试卷数字化专家。你的任务是：
 1. 判定上传的图片是否为试卷页面
@@ -331,6 +352,9 @@ class MetadataAgent(AIAgent):
     负责从题目文本中提取知识点和难度
     """
 
+    def __init__(self):
+        super().__init__(agent_type='metadata')
+
     DEFAULT_PROMPT = """你是一个教育专家，擅长分析题目并提取知识点和难度。
 
 根据给定的题目文本，请分析并返回以下JSON格式：
@@ -413,6 +437,9 @@ class GradingAgent(AIAgent):
     负责对学生的作答进行评分
     """
 
+    def __init__(self):
+        super().__init__(agent_type='grading')
+
     DEFAULT_PROMPT = """你是一位严格公正的阅卷老师。请根据以下信息进行评分：
 
 题目信息：
@@ -484,17 +511,64 @@ class GradingAgent(AIAgent):
         根据题目数据对象进行评分（支持新格式）
 
         Args:
-            question_data: 题目数据字典，需包含question_stem, student_answer, score
+            question_data: 题目数据字典，需包含question_stem, student_answer, score等
             custom_prompt: 自定义提示词（可选）
 
         Returns:
             dict: 评分结果
         """
-        question_text = question_data.get('question_stem', '')
-        user_answer = question_data.get('student_answer', '')
-        max_score = question_data.get('score', '10')
+        try:
+            prompt = custom_prompt or self.DEFAULT_PROMPT
 
-        return self.grade(question_text, user_answer, max_score, custom_prompt)
+            question_json_str = json.dumps({
+                "question_number": question_data.get('question_index', question_data.get('question_number', '')),
+                "question_stem": question_data.get('question_stem', question_data.get('ocr_text', '')),
+                "student_answer": question_data.get('student_answer', question_data.get('user_answer_text', '')),
+                "score": str(question_data.get('score', question_data.get('max_score', 10))),
+                "difficulty": "",
+                "reference_answer": "",
+                "analysis": "",
+                "knowledge_point": ""
+            }, ensure_ascii=False)
+
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'GradingAgent 发送题目数据',
+                      model=self.grading_model,
+                      question_number=question_data.get('question_index', ''),
+                      input_json=question_json_str)
+
+            messages = [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": question_json_str}
+            ]
+
+            result = self.call_api(messages, model=self.grading_model)
+
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'GradingAgent 返回结果',
+                      model=self.grading_model,
+                      question_number=question_data.get('question_index', ''),
+                      raw_result=result)
+
+            max_score = int(question_data.get('score', question_data.get('max_score', 10)))
+            validated_result = self.json_processor.validate_and_normalize_grading_result(
+                result, max_score=max_score
+            )
+
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'GradingAgent 评分完成',
+                      question_number=question_data.get('question_index', ''),
+                      earned_score=validated_result.get('earned_score'),
+                      max_score=max_score,
+                      validated_result=validated_result)
+
+            return validated_result
+
+        except Exception as e:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'GradingAgent评分失败', error=str(e))
+            return {
+                "standard_answer": "无法生成标准答案",
+                "user_score": 0,
+                "earned_score": 0,
+                "feedback": f"评分失败: {str(e)}"
+            }
 
     def grade_batch(self, questions: list, custom_prompt=None):
         """
@@ -522,30 +596,44 @@ class AnalysisAgent(AIAgent):
     负责生成考试分析报告
     """
 
-    DEFAULT_PROMPT = """你是一位专业的教育分析师。请根据以下考试数据生成详细的分析报告：
+    def __init__(self):
+        super().__init__(agent_type='analysis')
 
-考试信息：
-- 考试名称：{exam_name}
-- 考试日期：{exam_date}
-- 科目：{subject_name}
+    DEFAULT_PROMPT = """你是一位专业的教育分析师，具备强大的数据聚合与教育学诊断能力。
 
-题目详情（JSON数组）：
-{questions_data}
+请接收已完成评分与解析的整卷JSON数据，进行多维度分析并生成总结报告。
 
-请生成以下JSON格式的分析报告：
-{{
-    "summary": "整体情况总结",
-    "score_analysis": {{
-        "total_score": 总分,
-        "user_score": 得分,
-        "score_rate": 得分率
-    }},
-    "strengths": ["优势1", "优势2"],
-    "weaknesses": ["薄弱点1", "薄弱点2"],
-    "suggestions": ["改进建议1", "改进建议2"]
-}}
+输入格式：
+{
+  "exam_name": "考试名称（可能缺失）",
+  "questions": [
+    {
+      "question_number": "题号",
+      "score": "满分分值",
+      "earned_score": 实际得分,
+      "difficulty": "难度",
+      "knowledge_point": "知识点",
+      "student_answer": "学生答案",
+      "analysis": "解析"
+    }
+  ]
+}
 
-只返回JSON格式。"""
+分析要求：
+1. 统计总分和总得分，计算得分率
+2. 分析知识点分布和难度分布
+3. 识别薄弱环节与优势板块
+4. 生成150-300字的专业分析总结
+
+输出格式（必须是严格JSON）：
+{
+  "exam_name": "考试名称",
+  "total_score": 总分,
+  "total_earned_score": 实际得分,
+  "summary": "分析总结（150-300字）"
+}
+
+注意：只返回JSON格式，不要包含Markdown代码块符号。"""
 
     def analyze(self, exam_data, custom_prompt=None):
         """
@@ -559,46 +647,66 @@ class AnalysisAgent(AIAgent):
             dict: 分析报告
         """
         try:
-            questions_json = json.dumps(exam_data.get('questions', []),
-                                      ensure_ascii=False, indent=2)
+            exam_name = exam_data.get('name', exam_data.get('exam_name', ''))
+            questions = exam_data.get('questions', [])
 
-            prompt = (custom_prompt or self.DEFAULT_PROMPT).format(
-                exam_name=exam_data.get('name', ''),
-                exam_date=exam_data.get('date', ''),
-                subject_name=exam_data.get('subject_name', ''),
-                questions_data=questions_json
-            )
+            input_data = {
+                "exam_name": exam_name,
+                "questions": []
+            }
+
+            for q in questions:
+                question_item = {
+                    "question_number": q.get('question_number', q.get('question_index', '')),
+                    "score": str(q.get('score', q.get('max_score', 0))),
+                    "earned_score": q.get('user_score', q.get('earned_score', 0)),
+                    "difficulty": q.get('difficulty', ''),
+                    "knowledge_point": q.get('knowledge_tags', [''])[0] if isinstance(q.get('knowledge_tags'), list) else str(q.get('knowledge_tags', '')),
+                    "student_answer": q.get('student_answer', q.get('user_answer_text', '')),
+                    "analysis": q.get('analysis', q.get('feedback', ''))
+                }
+                input_data["questions"].append(question_item)
+
+            questions_json = json.dumps(input_data, ensure_ascii=False, indent=2)
+
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'AnalysisAgent 发送分析数据',
+                      model=self.analysis_model,
+                      exam_name=exam_name,
+                      question_count=len(questions),
+                      input_json=questions_json[:500])
 
             messages = [
-                {"role": "system", "content": prompt}
+                {"role": "system", "content": custom_prompt or self.DEFAULT_PROMPT},
+                {"role": "user", "content": questions_json}
             ]
-
-            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'AnalysisAgent API调用开始',
-                      model=self.analysis_model,
-                      exam_name=exam_data.get('name', ''),
-                      question_count=len(exam_data.get('questions', [])))
 
             result = self.call_api(messages, model=self.analysis_model)
 
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'AnalysisAgent 返回结果',
+                      model=self.analysis_model,
+                      raw_result=result[:500] if result else 'Empty')
+
             validated_result = self.json_processor.validate_and_normalize_analysis_result(result)
 
-            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AnalysisAgent分析完成',
-                      summary=validated_result.get('summary', '')[:100],
-                      score_rate=validated_result.get('score_analysis', {}).get('score_rate'))
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AnalysisAgent 分析完成',
+                      exam_name=validated_result.get('exam_name', exam_name),
+                      total_score=validated_result.get('total_score'),
+                      total_earned_score=validated_result.get('total_earned_score'),
+                      summary=validated_result.get('summary', '')[:100])
 
             return validated_result
 
         except Exception as e:
-            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AnalysisAgent分析失败', error=str(e))
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AnalysisAgent 分析失败', error=str(e))
             return self.json_processor.validate_and_normalize_analysis_result(None)
 
     def analyze_exam(self, exam_info: dict, questions: list, custom_prompt=None):
         """
-        根据考试信息和题目列表生成分析报告（支持新格式）
+        分析考试数据（兼容旧接口）
 
         Args:
             exam_info: 考试信息字典
-            questions: 题目列表（包含得分信息）
+            questions: 题目列表
             custom_prompt: 自定义提示词（可选）
 
         Returns:
@@ -608,7 +716,6 @@ class AnalysisAgent(AIAgent):
             'name': exam_info.get('name', ''),
             'date': exam_info.get('date', ''),
             'subject_name': exam_info.get('subject_name', ''),
-            'questions': questions
+            'questions': [q.to_dict() if hasattr(q, 'to_dict') else q for q in questions]
         }
-
         return self.analyze(exam_data, custom_prompt)

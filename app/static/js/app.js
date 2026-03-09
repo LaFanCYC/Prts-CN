@@ -296,23 +296,35 @@ function renderQuestionsList() {
 
             <div class="ocr-info">
                 ${q.student_answer ? `
-                <div class="ocr-student-answer">
+                <div class="ocr-field">
                     <span class="ocr-label">【OCR识别】学生答案：</span>
-                    <span class="ocr-value">${q.student_answer}</span>
+                    <input type="text" class="ocr-input ocr-student-answer-input"
+                           value="${q.student_answer || ''}"
+                           data-field="student_answer"
+                           data-index="${index}"
+                           placeholder="OCR识别结果，可手动修改">
                 </div>
                 ` : ''}
-                ${q.knowledge_tags && q.knowledge_tags.length > 0 ? `
-                <div class="ocr-knowledge">
+                <div class="ocr-field">
                     <span class="ocr-label">【OCR识别】知识点：</span>
-                    <span class="ocr-value">${q.knowledge_tags.join(', ')}</span>
+                    <input type="text" class="ocr-input ocr-knowledge-input"
+                           value="${q.knowledge_tags && q.knowledge_tags.length > 0 ? q.knowledge_tags.join(', ') : ''}"
+                           data-field="knowledge_tags"
+                           data-index="${index}"
+                           placeholder="多个知识点用逗号分隔">
                 </div>
-                ` : ''}
-                ${q.difficulty ? `
-                <div class="ocr-difficulty">
+                <div class="ocr-field">
                     <span class="ocr-label">【OCR识别】难度：</span>
-                    <span class="ocr-value">${q.difficulty}</span>
+                    <select class="ocr-select ocr-difficulty-input"
+                            data-field="difficulty"
+                            data-index="${index}">
+                        <option value="1" ${q.difficulty == 1 ? 'selected' : ''}>简单</option>
+                        <option value="2" ${q.difficulty == 2 ? 'selected' : ''}>较简单</option>
+                        <option value="3" ${(!q.difficulty || q.difficulty == 3) ? 'selected' : ''}>中等</option>
+                        <option value="4" ${q.difficulty == 4 ? 'selected' : ''}>较难</option>
+                        <option value="5" ${q.difficulty == 5 ? 'selected' : ''}>困难</option>
+                    </select>
                 </div>
-                ` : ''}
             </div>
 
             <div class="answer-section">
@@ -419,6 +431,55 @@ function renderQuestionsList() {
         });
         
         input.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    list.querySelectorAll('.ocr-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const field = e.target.dataset.field;
+            const value = e.target.value;
+
+            const updateData = {};
+            if (field === 'knowledge_tags') {
+                updateData.knowledge_tags = JSON.stringify(value.split(',').map(k => k.trim()).filter(k => k));
+            } else if (field === 'difficulty') {
+                updateData.difficulty = parseInt(value) || 3;
+            } else {
+                updateData[field] = value;
+            }
+
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify(updateData)
+            });
+
+            if (field === 'knowledge_tags') {
+                currentQuestions[index].knowledge_tags = value.split(',').map(k => k.trim()).filter(k => k);
+            } else if (field === 'difficulty') {
+                currentQuestions[index].difficulty = parseInt(value) || 3;
+            } else {
+                currentQuestions[index][field] = value;
+            }
+        });
+
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    list.querySelectorAll('.ocr-select').forEach(select => {
+        select.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const field = e.target.dataset.field;
+            const value = parseInt(e.target.value);
+
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ difficulty: value })
+            });
+
+            currentQuestions[index].difficulty = value;
+        });
+
+        select.addEventListener('click', (e) => e.stopPropagation());
     });
     
     list.querySelectorAll('.btn-delete-question').forEach(btn => {
@@ -692,9 +753,18 @@ async function loadSettings() {
         const settings = await apiRequest('/settings');
         document.getElementById('api-key').value = settings.api_key || '';
         document.getElementById('api-base').value = settings.api_base || '';
+        document.getElementById('vision-api-key').value = settings.vision_api_key || '';
+        document.getElementById('vision-api-base').value = settings.vision_api_base || '';
+        document.getElementById('grading-api-key').value = settings.grading_api_key || '';
+        document.getElementById('grading-api-base').value = settings.grading_api_base || '';
+        document.getElementById('analysis-api-key').value = settings.analysis_api_key || '';
+        document.getElementById('analysis-api-base').value = settings.analysis_api_base || '';
+        document.getElementById('metadata-api-key').value = settings.metadata_api_key || '';
+        document.getElementById('metadata-api-base').value = settings.metadata_api_base || '';
         document.getElementById('model-vision').value = settings.model_vision || '';
         document.getElementById('model-grading').value = settings.model_grading || '';
         document.getElementById('model-analysis').value = settings.model_analysis || '';
+        document.getElementById('model-metadata').value = settings.model_metadata || '';
     } catch (error) {
         console.error('Failed to load settings:', error);
     }
@@ -704,11 +774,20 @@ async function saveSettings() {
     const settings = {
         api_key: document.getElementById('api-key').value,
         api_base: document.getElementById('api-base').value,
+        vision_api_key: document.getElementById('vision-api-key').value,
+        vision_api_base: document.getElementById('vision-api-base').value,
+        grading_api_key: document.getElementById('grading-api-key').value,
+        grading_api_base: document.getElementById('grading-api-base').value,
+        analysis_api_key: document.getElementById('analysis-api-key').value,
+        analysis_api_base: document.getElementById('analysis-api-base').value,
+        metadata_api_key: document.getElementById('metadata-api-key').value,
+        metadata_api_base: document.getElementById('metadata-api-base').value,
         model_vision: document.getElementById('model-vision').value,
         model_grading: document.getElementById('model-grading').value,
-        model_analysis: document.getElementById('model-analysis').value
+        model_analysis: document.getElementById('model-analysis').value,
+        model_metadata: document.getElementById('model-metadata').value
     };
-    
+
     try {
         await apiRequest('/settings', {
             method: 'PUT',

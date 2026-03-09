@@ -14,6 +14,29 @@ api = Blueprint('api', __name__)
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
 
+def normalize_api_base(url):
+    """规范化API基础URL，兼容完整路径和简写形式"""
+    if not url:
+        return 'https://ark.cn-beijing.volces.com/api/v3'
+
+    url = url.strip().rstrip('/')
+
+    if '/chat/completions' in url or '/v1/models' in url:
+        base_url = url.rsplit('/chat/completions', 1)[0].rsplit('/v1/models', 1)[0]
+        if '/v1' in base_url:
+            return base_url
+        else:
+            return base_url + '/v1'
+
+    if url.endswith('/v1'):
+        return url
+
+    if '/v1/' not in url:
+        return url + '/v1'
+
+    return url
+
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -167,6 +190,10 @@ def update_question(question_id):
         question.standard_answer = data['standard_answer']
     if 'feedback' in data:
         question.feedback = data['feedback']
+    if 'student_answer' in data:
+        question.student_answer = data['student_answer']
+    if 'analysis' in data:
+        question.analysis = data['analysis']
     
     db.session.commit()
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新题目完成', question_id=question.id)
@@ -245,6 +272,24 @@ def upload_image():
         if extract:
             vision_agent = VisionAgent()
             custom_prompt = get_prompt('vision')
+
+            settings = Setting.query.all()
+            settings_dict = {s.key: s.value for s in settings}
+            api_key = settings_dict.get('vision_api_key') or settings_dict.get('api_key') or os.getenv('AI_VISION_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings_dict.get('vision_api_base') or settings_dict.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            api_base = normalize_api_base(api_base)
+            model = settings_dict.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+
+            if api_key and api_key.strip():
+                vision_agent.client.api_key = api_key
+            if api_base and api_base.strip():
+                vision_agent.client.base_url = api_base
+            if model and model.strip():
+                vision_agent.vision_model = model
+
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'VisionAgent 使用设置',
+                      api_key_set=bool(api_key), api_base=api_base, model=model)
+
             logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取视觉模型Prompt', prompt=custom_prompt[:200] if custom_prompt else 'None')
             vision_result = vision_agent.analyze(filepath, custom_prompt)
             
@@ -351,6 +396,24 @@ def extract_questions():
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '开始提取题目', image_path=absolute_path)
         vision_agent = VisionAgent()
         custom_prompt = get_prompt('vision')
+
+        settings = Setting.query.all()
+        settings_dict = {s.key: s.value for s in settings}
+        api_key = settings_dict.get('vision_api_key') or settings_dict.get('api_key') or os.getenv('AI_VISION_API_KEY') or os.getenv('AI_API_KEY')
+        api_base = settings_dict.get('vision_api_base') or settings_dict.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+        api_base = normalize_api_base(api_base)
+        model = settings_dict.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+
+        if api_key and api_key.strip():
+            vision_agent.client.api_key = api_key
+        if api_base and api_base.strip():
+            vision_agent.client.base_url = api_base
+        if model and model.strip():
+            vision_agent.vision_model = model
+
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'VisionAgent 使用设置',
+                  api_key_set=bool(api_key), api_base=api_base, model=model)
+
         vision_result = vision_agent.analyze(absolute_path, custom_prompt)
         
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '视觉模型分析完成', vision_result=vision_result)
@@ -415,6 +478,24 @@ def analyze_metadata(question_id):
     
     metadata_agent = MetadataAgent()
     custom_prompt = get_prompt('metadata')
+
+    settings = Setting.query.all()
+    settings_dict = {s.key: s.value for s in settings}
+    api_key = settings_dict.get('metadata_api_key') or settings_dict.get('api_key') or os.getenv('AI_METADATA_API_KEY') or os.getenv('AI_API_KEY')
+    api_base = settings_dict.get('metadata_api_base') or settings_dict.get('api_base') or os.getenv('AI_METADATA_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+    api_base = normalize_api_base(api_base)
+    model = settings_dict.get('model_metadata') or os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini')
+
+    if api_key and api_key.strip():
+        metadata_agent.client.api_key = api_key
+    if api_base and api_base.strip():
+        metadata_agent.client.base_url = api_base
+    if model and model.strip():
+        metadata_agent.metadata_model = model
+
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'MetadataAgent 使用设置',
+              api_key_set=bool(api_key), api_base=api_base, model=model)
+
     result = metadata_agent.analyze(question.ocr_text, custom_prompt)
     
     question.knowledge_tags = json.dumps(result.get('knowledge_tags', []))
@@ -428,18 +509,24 @@ def analyze_metadata(question_id):
 @api.route('/grade/<int:question_id>', methods=['POST'])
 def grade_question(question_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '题目评分请求', question_id=question_id)
-    
+
     question = Question.query.get_or_404(question_id)
-    
+
     grading_agent = GradingAgent()
     custom_prompt = get_prompt('grading')
-    result = grading_agent.grade(
-        question.ocr_text,
-        question.user_answer_text,
-        question.max_score,
-        custom_prompt
-    )
-    
+
+    question_data = {
+        'question_index': question.question_index,
+        'question_number': question.question_index,
+        'question_stem': question.ocr_text,
+        'ocr_text': question.ocr_text,
+        'student_answer': question.student_answer if hasattr(question, 'student_answer') else question.user_answer_text,
+        'user_answer_text': question.user_answer_text,
+        'score': question.max_score,
+        'max_score': question.max_score
+    }
+    result = grading_agent.grade_question(question_data, custom_prompt)
+
     question.standard_answer = result.get('standard_answer', '')
     question.user_score = result.get('user_score', 0)
     question.feedback = result.get('feedback', '')
@@ -452,26 +539,55 @@ def grade_question(question_id):
 @api.route('/grade-all/<int:exam_id>', methods=['POST'])
 def grade_all_questions(exam_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '批量评分请求', exam_id=exam_id)
-    
+
     exam = Exam.query.get_or_404(exam_id)
     questions = Question.query.filter_by(exam_id=exam_id).all()
-    
+
     if not questions:
         return jsonify([])
-    
-    grading_agent = GradingAgent()
+
     custom_prompt = get_prompt('grading')
-    
+
+    settings = Setting.query.all()
+    settings_dict = {s.key: s.value for s in settings}
+
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取设置成功',
+              keys=list(settings_dict.keys()))
+
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def grade_single_question(question):
         try:
-            result = grading_agent.grade(
-                question.ocr_text,
-                question.user_answer_text,
-                question.max_score,
-                custom_prompt
-            )
+            agent = GradingAgent()
+
+            api_key = settings_dict.get('grading_api_key') or settings_dict.get('api_key') or os.getenv('AI_GRADING_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings_dict.get('grading_api_base') or settings_dict.get('api_base') or os.getenv('AI_GRADING_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            api_base = normalize_api_base(api_base)
+            model = settings_dict.get('model_grading') or os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
+
+            if api_key and api_key.strip():
+                agent.client.api_key = api_key
+            if api_base and api_base.strip():
+                agent.client.base_url = api_base
+            if model and model.strip():
+                agent.grading_model = model
+
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '使用设置进行评分',
+                      api_key_set=bool(api_key),
+                      api_base=api_base,
+                      model=model)
+
+            question_data = {
+                'question_index': question.question_index,
+                'question_number': question.question_index,
+                'question_stem': question.ocr_text,
+                'ocr_text': question.ocr_text,
+                'student_answer': question.student_answer if hasattr(question, 'student_answer') else question.user_answer_text,
+                'user_answer_text': question.user_answer_text,
+                'score': question.max_score,
+                'max_score': question.max_score
+            }
+            result = agent.grade_question(question_data, custom_prompt)
             return question.id, result, None
         except Exception as e:
             logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'GradingAgent评分失败', error=str(e), question_id=question.id)
@@ -538,6 +654,24 @@ def analyze_exam(exam_id):
     
     analysis_agent = AnalysisAgent()
     custom_prompt = get_prompt('analysis')
+
+    settings = Setting.query.all()
+    settings_dict = {s.key: s.value for s in settings}
+    api_key = settings_dict.get('analysis_api_key') or settings_dict.get('api_key') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
+    api_base = settings_dict.get('analysis_api_base') or settings_dict.get('api_base') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+    api_base = normalize_api_base(api_base)
+    model = settings_dict.get('model_analysis') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+
+    if api_key and api_key.strip():
+        analysis_agent.client.api_key = api_key
+    if api_base and api_base.strip():
+        analysis_agent.client.base_url = api_base
+    if model and model.strip():
+        analysis_agent.analysis_model = model
+
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AnalysisAgent 使用设置',
+              api_key_set=bool(api_key), api_base=api_base, model=model)
+
     result = analysis_agent.analyze(exam_data, custom_prompt)
     
     exam.analysis_report = json.dumps(result, ensure_ascii=False)
@@ -598,20 +732,28 @@ def get_settings():
     settings_dict = {}
     for setting in settings:
         settings_dict[setting.key] = setting.value
-    
-    # Default values if not in database
+
     default_settings = {
-        'api_key': os.getenv('AI_API_KEY', 'your-api-key-here'),
+        'api_key': os.getenv('AI_API_KEY', ''),
         'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
         'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
         'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
-        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro'),
+        'model_metadata': os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini'),
+        'vision_api_key': os.getenv('AI_VISION_API_KEY', ''),
+        'vision_api_base': os.getenv('AI_VISION_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'grading_api_key': os.getenv('AI_GRADING_API_KEY', ''),
+        'grading_api_base': os.getenv('AI_GRADING_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'analysis_api_key': os.getenv('AI_ANALYSIS_API_KEY', ''),
+        'analysis_api_base': os.getenv('AI_ANALYSIS_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'metadata_api_key': os.getenv('AI_METADATA_API_KEY', ''),
+        'metadata_api_base': os.getenv('AI_METADATA_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
     }
-    
+
     for key, default_value in default_settings.items():
         if key not in settings_dict:
             settings_dict[key] = default_value
-    
+
     return jsonify(settings_dict)
 
 
@@ -644,19 +786,26 @@ def update_settings():
 
 @api.route('/settings/reset', methods=['POST'])
 def reset_settings():
-    # Delete all settings
     Setting.query.delete()
     db.session.commit()
-    
-    # Return default settings
+
     default_settings = {
-        'api_key': os.getenv('AI_API_KEY', 'your-api-key-here'),
+        'api_key': os.getenv('AI_API_KEY', ''),
         'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
         'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
         'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
-        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+        'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro'),
+        'model_metadata': os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini'),
+        'vision_api_key': os.getenv('AI_VISION_API_KEY', ''),
+        'vision_api_base': os.getenv('AI_VISION_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'grading_api_key': os.getenv('AI_GRADING_API_KEY', ''),
+        'grading_api_base': os.getenv('AI_GRADING_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'analysis_api_key': os.getenv('AI_ANALYSIS_API_KEY', ''),
+        'analysis_api_base': os.getenv('AI_ANALYSIS_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'metadata_api_key': os.getenv('AI_METADATA_API_KEY', ''),
+        'metadata_api_base': os.getenv('AI_METADATA_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
     }
-    
+
     return jsonify(default_settings)
 
 

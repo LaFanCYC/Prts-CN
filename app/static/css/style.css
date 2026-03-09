@@ -267,8 +267,8 @@ body {
 
 .correction-workspace {
     display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 24px;
+    grid-template-columns: 1fr 450px;
+    gap: 16px;
     height: calc(100vh - 150px);
 }
 
@@ -293,8 +293,10 @@ body {
 
 #exam-canvas {
     max-width: 100%;
-    max-height: 100%;
+    max-height: calc(100vh - 200px);
     box-shadow: var(--shadow-lg);
+    width: auto;
+    height: auto;
 }
 
 .form-panel {
@@ -384,9 +386,13 @@ body {
     font-size: 14px;
     color: var(--text-secondary);
     margin-bottom: 12px;
-    max-height: 80px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: none;
+    overflow: visible;
 }
 
 .question-item .ocr-info {
@@ -413,6 +419,35 @@ body {
 .question-item .ocr-label {
     font-weight: 600;
     color: #495057;
+    min-width: 100px;
+    display: inline-block;
+}
+
+.question-item .ocr-field {
+    margin-bottom: 8px;
+}
+
+.question-item .ocr-input,
+.question-item .ocr-select {
+    padding: 6px 10px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 13px;
+    width: calc(100% - 120px);
+    background: white;
+}
+
+.question-item .ocr-input:focus,
+.question-item .ocr-select:focus {
+    outline: none;
+    border-color: #4dabf7;
+    box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.2);
+}
+
+.question-item .ocr-select {
+    width: auto;
+    min-width: 100px;
+    cursor: pointer;
 }
 
 .question-item .ocr-value {
