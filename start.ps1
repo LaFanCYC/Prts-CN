@@ -1,7 +1,7 @@
-# GradeAI 一键启动脚本 (PowerShell版)
+# PRTS 一键启动脚本 (PowerShell版)
 
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "GradeAI 智能成绩分析系统 - 一键启动脚本" -ForegroundColor Cyan
+Write-Host "PRTS 智能成绩分析系统 - 一键启动脚本" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 

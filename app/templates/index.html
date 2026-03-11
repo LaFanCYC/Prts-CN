@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GradeAI - 智能成绩分析系统</title>
+    <title>PRTS - 智能成绩分析系统</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -59,10 +59,16 @@
                     <button class="btn btn-secondary" id="extract-questions-btn">🔍 提取题目</button>
                     <button class="btn btn-secondary" id="add-question-btn">➕ 添加题目</button>
                     <button class="btn btn-primary" id="start-grading-btn">开始批改</button>
+                    <button class="btn btn-success" id="generate-analysis-btn">📊 生成分析报告</button>
                 </div>
             </header>
             <div class="correction-workspace">
                 <div class="image-panel">
+                    <div class="image-nav" id="image-nav" style="display: none;">
+                        <button class="btn btn-secondary btn-sm" id="prev-image-btn">◀ 上一张</button>
+                        <span id="image-counter">1 / 1</span>
+                        <button class="btn btn-secondary btn-sm" id="next-image-btn">下一张 ▶</button>
+                    </div>
                     <div class="canvas-container">
                         <canvas id="exam-canvas"></canvas>
                     </div>
@@ -81,6 +87,10 @@
                 <div class="subject-selector">
                     <label>选择学科：</label>
                     <select id="dashboard-subject-select"></select>
+                </div>
+                <div class="subject-analysis-section" id="subject-analysis-section" style="display: none;">
+                    <h3>学科综合分析</h3>
+                    <div class="subject-analysis-content" id="subject-analysis-content"></div>
                 </div>
                 <div class="charts-grid">
                     <div class="chart-card">
@@ -202,22 +212,24 @@
                 </div>
 
                 <div class="settings-card">
-                    <h3>Metadata Agent（知识点分析）</h3>
+                    <h3>Subject Analysis Agent（学科分析）</h3>
                     <div class="settings-form">
                         <div class="form-group">
                             <label>API 密钥</label>
-                            <input type="password" id="metadata-api-key" class="form-input" placeholder="Metadata Agent 专用 API 密钥">
+                            <input type="password" id="subject-analysis-api-key" class="form-input" placeholder="Subject Analysis Agent 专用 API 密钥">
                         </div>
                         <div class="form-group">
                             <label>API 基础 URL</label>
-                            <input type="url" id="metadata-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
+                            <input type="url" id="subject-analysis-api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
                         </div>
                         <div class="form-group">
                             <label>模型</label>
-                            <input type="text" id="model-metadata" class="form-input" placeholder="如：doubao-seed-2.0-mini">
+                            <input type="text" id="model-subject-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                         </div>
                     </div>
                 </div>
+
+
 
                 <div class="settings-card">
                     <div class="settings-actions">
@@ -265,11 +277,8 @@
         <div class="modal-content">
             <h2>考试操作</h2>
             <div class="exam-actions">
-                <button class="btn btn-primary btn-block" id="action-upload">
-                    📤 上传试卷
-                </button>
-                <button class="btn btn-secondary btn-block" id="action-edit">
-                    ✏️ 编辑题目
+                <button class="btn btn-primary btn-block" id="action-edit">
+                    ✏️ 题目详情
                 </button>
                 <button class="btn btn-secondary btn-block" id="action-analysis">
                     📊 查看分析
@@ -284,17 +293,45 @@
     <div class="modal" id="upload-modal">
         <div class="modal-content upload-modal">
             <h2>上传试卷图片</h2>
-            <div class="upload-area" id="upload-area">
-                <span class="upload-icon">📁</span>
-                <p>拖拽图片到此处，或点击选择（支持多张图片）</p>
-                <input type="file" id="file-input" accept="image/*" multiple hidden>
-            </div>
-            <div class="upload-progress" id="upload-progress" style="display:none;">
-                <div class="progress-bar"><div class="progress-fill"></div></div>
-                <p>正在分析试卷...</p>
+            <div class="upload-modal-body">
+                <div class="upload-sidebar">
+                    <h3>已上传图片</h3>
+                    <div class="uploaded-images-section" id="uploaded-images-section">
+                        <div class="uploaded-images-list" id="uploaded-images-list"></div>
+                    </div>
+                </div>
+                <div class="upload-main">
+                    <div class="upload-area" id="upload-area">
+                        <span class="upload-icon">📁</span>
+                        <p>拖拽图片到此处，或点击选择（支持多张图片）</p>
+                        <input type="file" id="file-input" accept="image/*" multiple hidden>
+                    </div>
+                    <div class="upload-progress" id="upload-progress" style="display:none;">
+                        <div class="progress-bar"><div class="progress-fill"></div></div>
+                        <p>正在分析试卷...</p>
+                    </div>
+                    <div class="extract-section">
+                        <button class="btn btn-primary btn-block" id="extract-questions-btn">
+                            🎯 识别题目
+                        </button>
+                        <p class="extract-hint">点击识别已上传的题目图片</p>
+                    </div>
+                </div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="cancel-upload-btn">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="select-images-modal">
+        <div class="modal-content">
+            <h2>选择要识别的图片</h2>
+            <p class="select-images-hint">请选择需要识别题目的图片：</p>
+            <div class="select-images-list" id="select-images-list"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cancel-select-images-btn">取消</button>
+                <button class="btn btn-primary" id="confirm-select-images-btn">确认识别</button>
             </div>
         </div>
     </div>

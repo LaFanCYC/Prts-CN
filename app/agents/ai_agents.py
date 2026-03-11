@@ -10,6 +10,18 @@ from datetime import datetime
 from logger import logger, LOG_CATEGORIES
 from app.agents.json_processor import JSONProcessor
 
+def load_prompt_from_file(name):
+    """从prompts文件夹中读取提示词文件"""
+    prompt_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'prompts')
+    file_path = os.path.join(prompt_dir, f'{name}.txt')
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+    except Exception as e:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], f'读取提示词文件失败: {name}.txt', error=str(e))
+    return None
+
 class AIAgent:
     """
     AI Agent 基类
@@ -97,7 +109,19 @@ class AIAgent:
 
             response = self.client.chat.completions.create(**params)
 
-            content = response.choices[0].message.content
+            if not hasattr(response, 'choices') or len(response.choices) == 0:
+                error_msg = "API returned no choices"
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'AI API 返回空结果', 
+                          model=model, response=str(response))
+                return json.dumps({
+                    "error": error_msg,
+                    "is_exam_paper": False,
+                    "items": []
+                })
+
+            choice = response.choices[0]
+            message = choice.message if hasattr(choice, 'message') else None
+            content = message.content if message else None
 
             if content is None:
                 error_msg = "API returned empty content (possibly rate limited)"
@@ -171,6 +195,10 @@ class AIAgent:
             api_key = settings.get('metadata_api_key') or settings.get('api_key') or os.getenv('AI_METADATA_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('metadata_api_base') or settings.get('api_base') or os.getenv('AI_METADATA_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_metadata') or os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini')
+        elif self.agent_type == 'subject_analysis':
+            api_key = settings.get('subject_analysis_api_key') or settings.get('analysis_api_key') or settings.get('api_key') or os.getenv('AI_SUBJECT_ANALYSIS_API_KEY') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
+            api_base = settings.get('subject_analysis_api_base') or settings.get('analysis_api_base') or settings.get('api_base') or os.getenv('AI_SUBJECT_ANALYSIS_API_BASE') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+            model = settings.get('model_subject_analysis') or settings.get('model_analysis') or os.getenv('AI_MODEL_SUBJECT_ANALYSIS') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
         else:
             api_key = settings.get('api_key') or os.getenv('AI_API_KEY')
             api_base = settings.get('api_base') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
@@ -191,6 +219,8 @@ class AIAgent:
                 self.analysis_model = model
             elif self.agent_type == 'metadata':
                 self.metadata_model = model
+            elif self.agent_type == 'subject_analysis':
+                self.analysis_model = model
 
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '设置加载完成',
                   agent_type=self.agent_type,
@@ -207,6 +237,8 @@ class AIAgent:
             return self.analysis_model
         elif self.agent_type == 'metadata':
             return self.metadata_model
+        elif self.agent_type == 'subject_analysis':
+            return self.analysis_model
         return None
 
     def encode_image(self, image_path):
@@ -285,11 +317,17 @@ class VisionAgent(AIAgent):
                 }
             ]
 
-            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '视觉模型API调用开始',
-                      model=self.vision_model)
+            prompt_content = custom_prompt or self.DEFAULT_PROMPT
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'VisionAgent 发送题目数据',
+                      model=self.vision_model,
+                      image_path=image_path,
+                      input_prompt=prompt_content[:500] if prompt_content else 'Empty')
+
             result = self.call_api(messages, model=self.vision_model)
-            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], '视觉模型API调用完成',
-                      model=self.vision_model, raw_result=result[:200] if result else 'Empty')
+
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'VisionAgent 返回结果',
+                      model=self.vision_model,
+                      raw_result=result[:1000] if result else 'Empty')
 
             if isinstance(result, str) and 'error' in result.lower():
                 error_data = self.json_processor.parse_json(result, default={})
@@ -355,32 +393,32 @@ class MetadataAgent(AIAgent):
     def __init__(self):
         super().__init__(agent_type='metadata')
 
-    DEFAULT_PROMPT = """你是一个教育专家，擅长分析题目并提取知识点和难度。
+    DEFAULT_PROMPT = """你是一个教育专家，擅长分析题目并提取知识点。
 
 根据给定的题目文本，请分析并返回以下JSON格式：
 {
-    "knowledge_tags": ["知识点1", "知识点2"],
-    "difficulty": 1-5的整数，1最简单，5最难
+    "knowledge_tags": ["知识点1", "知识点2"]
 }
 
 只返回JSON格式。"""
 
     def analyze(self, question_text, custom_prompt=None):
         """
-        分析题目文本，提取知识点和难度
+        分析题目文本，提取知识点
 
         Args:
             question_text: 题干文本
             custom_prompt: 自定义提示词（可选）
 
         Returns:
-            dict: 包含knowledge_tags和difficulty的字典
+            dict: 包含knowledge_tags的字典
         """
         try:
+            prompt = custom_prompt or self.DEFAULT_PROMPT
             messages = [
                 {
                     "role": "system",
-                    "content": custom_prompt or self.DEFAULT_PROMPT
+                    "content": prompt
                 },
                 {
                     "role": "user",
@@ -388,25 +426,28 @@ class MetadataAgent(AIAgent):
                 }
             ]
 
-            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'MetadataAgent API调用开始',
-                      model=self.grading_model,
-                      question_text=question_text[:100])
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'MetadataAgent 发送题目数据',
+                      model=self.metadata_model,
+                      input_text=question_text[:200],
+                      prompt=prompt[:300] if prompt else 'Empty')
 
-            result = self.call_api(messages, model=self.grading_model)
+            result = self.call_api(messages, model=self.metadata_model)
+
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'MetadataAgent 返回结果',
+                      model=self.metadata_model,
+                      raw_result=result[:1000] if result else 'Empty')
 
             validated_result = self.json_processor.validate_and_normalize_metadata_result(result)
 
-            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'MetadataAgent分析完成',
-                      knowledge_tags=validated_result.get('knowledge_tags'),
-                      difficulty=validated_result.get('difficulty'))
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'MetadataAgent 分析完成',
+                      knowledge_tags=validated_result.get('knowledge_tags'))
 
             return validated_result
 
         except Exception as e:
             logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'MetadataAgent分析失败', error=str(e))
             return {
-                "knowledge_tags": [],
-                "difficulty": 3
+                "knowledge_tags": []
             }
 
     def analyze_batch(self, questions: list, custom_prompt=None):
@@ -525,7 +566,6 @@ class GradingAgent(AIAgent):
                 "question_stem": question_data.get('question_stem', question_data.get('ocr_text', '')),
                 "student_answer": question_data.get('student_answer', question_data.get('user_answer_text', '')),
                 "score": str(question_data.get('score', question_data.get('max_score', 10))),
-                "difficulty": "",
                 "reference_answer": "",
                 "analysis": "",
                 "knowledge_point": ""
@@ -534,7 +574,8 @@ class GradingAgent(AIAgent):
             logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'GradingAgent 发送题目数据',
                       model=self.grading_model,
                       question_number=question_data.get('question_index', ''),
-                      input_json=question_json_str)
+                      input_json=question_json_str,
+                      prompt=prompt[:300] if prompt else 'Empty')
 
             messages = [
                 {"role": "system", "content": prompt},
@@ -546,7 +587,7 @@ class GradingAgent(AIAgent):
             logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'GradingAgent 返回结果',
                       model=self.grading_model,
                       question_number=question_data.get('question_index', ''),
-                      raw_result=result)
+                      raw_result=result[:1500] if result else 'Empty')
 
             max_score = int(question_data.get('score', question_data.get('max_score', 10)))
             validated_result = self.json_processor.validate_and_normalize_grading_result(
@@ -611,7 +652,6 @@ class AnalysisAgent(AIAgent):
       "question_number": "题号",
       "score": "满分分值",
       "earned_score": 实际得分,
-      "difficulty": "难度",
       "knowledge_point": "知识点",
       "student_answer": "学生答案",
       "analysis": "解析"
@@ -621,7 +661,7 @@ class AnalysisAgent(AIAgent):
 
 分析要求：
 1. 统计总分和总得分，计算得分率
-2. 分析知识点分布和难度分布
+2. 分析知识点分布
 3. 识别薄弱环节与优势板块
 4. 生成150-300字的专业分析总结
 
@@ -656,12 +696,17 @@ class AnalysisAgent(AIAgent):
             }
 
             for q in questions:
+                knowledge_tags = q.get('knowledge_tags', [])
+                if isinstance(knowledge_tags, list):
+                    knowledge_point = knowledge_tags[0] if knowledge_tags else ''
+                else:
+                    knowledge_point = str(knowledge_tags) if knowledge_tags else ''
+                
                 question_item = {
                     "question_number": q.get('question_number', q.get('question_index', '')),
                     "score": str(q.get('score', q.get('max_score', 0))),
                     "earned_score": q.get('user_score', q.get('earned_score', 0)),
-                    "difficulty": q.get('difficulty', ''),
-                    "knowledge_point": q.get('knowledge_tags', [''])[0] if isinstance(q.get('knowledge_tags'), list) else str(q.get('knowledge_tags', '')),
+                    "knowledge_point": knowledge_point,
                     "student_answer": q.get('student_answer', q.get('user_answer_text', '')),
                     "analysis": q.get('analysis', q.get('feedback', ''))
                 }
@@ -669,14 +714,16 @@ class AnalysisAgent(AIAgent):
 
             questions_json = json.dumps(input_data, ensure_ascii=False, indent=2)
 
+            prompt_content = custom_prompt or self.DEFAULT_PROMPT
             logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'AnalysisAgent 发送分析数据',
                       model=self.analysis_model,
                       exam_name=exam_name,
                       question_count=len(questions),
-                      input_json=questions_json[:500])
+                      input_json=questions_json[:800],
+                      prompt=prompt_content[:500] if prompt_content else 'Empty')
 
             messages = [
-                {"role": "system", "content": custom_prompt or self.DEFAULT_PROMPT},
+                {"role": "system", "content": prompt_content},
                 {"role": "user", "content": questions_json}
             ]
 
@@ -684,7 +731,7 @@ class AnalysisAgent(AIAgent):
 
             logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'AnalysisAgent 返回结果',
                       model=self.analysis_model,
-                      raw_result=result[:500] if result else 'Empty')
+                      raw_result=result[:1500] if result else 'Empty')
 
             validated_result = self.json_processor.validate_and_normalize_analysis_result(result)
 
@@ -719,3 +766,110 @@ class AnalysisAgent(AIAgent):
             'questions': [q.to_dict() if hasattr(q, 'to_dict') else q for q in questions]
         }
         return self.analyze(exam_data, custom_prompt)
+
+
+class SubjectAnalysisAgent(AIAgent):
+    """
+    学科综合分析Agent
+    负责对整个学科进行综合分析，生成学科分析报告
+    """
+
+    def __init__(self):
+        super().__init__(agent_type='subject_analysis')
+
+    DEFAULT_PROMPT = None
+
+    def analyze(self, subject_data, custom_prompt=None):
+        """
+        分析学科数据，生成学科综合分析报告
+
+        Args:
+            subject_data: 学科数据字典
+            custom_prompt: 自定义提示词（可选）
+
+        Returns:
+            dict: 包含analysis_report的分析结果
+        """
+        try:
+            subject_name = subject_data.get('name', '')
+            exams = subject_data.get('exams', [])
+
+            input_data = {
+                "id": subject_data.get('id', 0),
+                "name": subject_name,
+                "analysis_report": subject_data.get('analysis_report', ''),
+                "exam_count": len(exams),
+                "created_at": subject_data.get('created_at', ''),
+                "updated_at": subject_data.get('updated_at', ''),
+                "exams": []
+            }
+
+            for exam in exams:
+                exam_item = {
+                    "id": exam.get('id', 0),
+                    "subject_id": exam.get('subject_id', 0),
+                    "name": exam.get('name', ''),
+                    "date": exam.get('date', ''),
+                    "analysis_report": exam.get('analysis_report', ''),
+                    "image_paths": exam.get('image_paths', []),
+                    "question_count": exam.get('question_count', 0),
+                    "total_score": exam.get('total_score', 0),
+                    "user_score": exam.get('user_score', 0),
+                    "created_at": exam.get('created_at', ''),
+                    "updated_at": exam.get('updated_at', ''),
+                    "questions": exam.get('questions', [])
+                }
+                input_data["exams"].append(exam_item)
+
+            questions_json = json.dumps(input_data, ensure_ascii=False, indent=2)
+
+            prompt_content = custom_prompt
+            if not prompt_content:
+                prompt_content = load_prompt_from_file('Subject_Ana')
+
+            logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'SubjectAnalysisAgent 发送分析数据',
+                      model=self.analysis_model,
+                      subject_name=subject_name,
+                      exam_count=len(exams),
+                      input_json=questions_json[:800],
+                      prompt=prompt_content[:500] if prompt_content else 'Empty')
+
+            messages = [
+                {"role": "system", "content": prompt_content},
+                {"role": "user", "content": questions_json}
+            ]
+
+            result = self.call_api(messages, model=self.analysis_model)
+
+            logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], 'SubjectAnalysisAgent 返回结果',
+                      model=self.analysis_model,
+                      raw_result=result[:1500] if result else 'Empty')
+
+            try:
+                result_data = json.loads(result)
+                if isinstance(result_data, str):
+                    result_data = json.loads(result_data)
+            except:
+                result_data = {
+                    "id": subject_data.get('id', 0),
+                    "name": subject_name,
+                    "analysis_report": result if result else '',
+                    "exam_count": len(exams),
+                    "exams": input_data["exams"]
+                }
+
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'SubjectAnalysisAgent 分析完成',
+                      subject_name=subject_name,
+                      exam_count=len(exams))
+
+            return result_data
+
+        except Exception as e:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], 'SubjectAnalysisAgent 分析失败', error=str(e))
+            return {
+                "id": subject_data.get('id', 0),
+                "name": subject_data.get('name', ''),
+                "analysis_report": f"分析失败：{str(e)}",
+                "exam_count": len(subject_data.get('exams', [])),
+                "exams": []
+            }

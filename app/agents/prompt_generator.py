@@ -2,14 +2,14 @@ import os
 from app.models import Prompt
 from app import db
 
-__all__ = ['VisionAgent', 'MetadataAgent', 'GradingAgent', 'AnalysisAgent', 'init_prompts', 'get_prompt', 'load_prompt_from_file']
+__all__ = ['VisionAgent', 'GradingAgent', 'AnalysisAgent', 'init_prompts', 'get_prompt', 'load_prompt_from_file']
 
 def load_prompt_from_file(name):
     """
     从prompts文件夹中读取提示词文件
 
     Args:
-        name: 提示词名称（vision, metadata, grading, analysis）
+        name: 提示词名称（vision, grading, analysis, Subject_Ana）
 
     Returns:
         str: 提示词内容，如果文件不存在返回None
@@ -35,32 +35,32 @@ def load_prompt_from_file(name):
 
 
 # 导入Agent类以获取默认提示词作为后备
-from app.agents.ai_agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent
+from app.agents.ai_agents import VisionAgent, GradingAgent, AnalysisAgent, SubjectAnalysisAgent
 
 DEFAULT_PROMPTS = [
     {
         'name': 'vision',
-        'role': '试卷识别与结构化处理AI',
-        'system_prompt': None,  # 动态从文件加载
+        'role': 'Vision',
+        'system_prompt': None,
         'description': '用于识别试卷图片，提取题目信息和坐标'
     },
     {
-        'name': 'metadata',
-        'role': '试题属性分析与标注专家AI',
-        'system_prompt': None,  # 动态从文件加载
-        'description': '用于分析题干，提取知识点和难度'
-    },
-    {
         'name': 'grading',
-        'role': '试卷解答与评分AI',
-        'system_prompt': None,  # 动态从文件加载
+        'role': 'Grade',
+        'system_prompt': None,
         'description': '用于批改题目，给出分数和点评'
     },
     {
         'name': 'analysis',
-        'role': '试卷分析与诊断报告生成AI',
-        'system_prompt': None,  # 动态从文件加载
+        'role': 'Exam_Analyze',
+        'system_prompt': None,
         'description': '用于生成考试分析报告'
+    },
+    {
+        'name': 'Subject_Ana',
+        'role': 'Subject_Analyze',
+        'system_prompt': None,
+        'description': '用于生成学科综合分析报告'
     }
 ]
 
@@ -79,15 +79,14 @@ def init_prompts():
         if file_prompt:
             system_prompt = file_prompt
         else:
-            # 使用Agent类的默认提示词作为后备
             if name == 'vision':
                 system_prompt = VisionAgent.DEFAULT_PROMPT
-            elif name == 'metadata':
-                system_prompt = MetadataAgent.DEFAULT_PROMPT
             elif name == 'grading':
                 system_prompt = GradingAgent.DEFAULT_PROMPT
             elif name == 'analysis':
                 system_prompt = AnalysisAgent.DEFAULT_PROMPT
+            elif name == 'Subject_Ana':
+                system_prompt = load_prompt_from_file('Subject_Ana') or ''
             else:
                 system_prompt = ''
 
@@ -135,8 +134,6 @@ def get_prompt(name):
     # 最后使用Agent类的默认提示词
     if name == 'vision':
         return VisionAgent.DEFAULT_PROMPT
-    elif name == 'metadata':
-        return MetadataAgent.DEFAULT_PROMPT
     elif name == 'grading':
         return GradingAgent.DEFAULT_PROMPT
     elif name == 'analysis':
@@ -162,8 +159,6 @@ def reset_prompt_to_default(name):
     else:
         if name == 'vision':
             system_prompt = VisionAgent.DEFAULT_PROMPT
-        elif name == 'metadata':
-            system_prompt = MetadataAgent.DEFAULT_PROMPT
         elif name == 'grading':
             system_prompt = GradingAgent.DEFAULT_PROMPT
         elif name == 'analysis':

@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app import db
 from app.models import Subject, Exam, Question, Prompt, Setting
-from app.agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent
+from app.agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent, SubjectAnalysisAgent
 from app.agents.prompt_generator import init_prompts, get_prompt
 from werkzeug.utils import secure_filename
 import os
@@ -15,7 +15,11 @@ api = Blueprint('api', __name__)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
 
 def normalize_api_base(url):
-    """规范化API基础URL，兼容完整路径和简写形式"""
+    """规范化API基础URL，兼容完整路径和简写形式
+    
+    - 如果URL已经包含完整的v3端点（如ark.cn-beijing.volces.com/api/v3），直接返回
+    - 如果URL是简写形式，添加/v1后缀
+    """
     if not url:
         return 'https://ark.cn-beijing.volces.com/api/v3'
 
@@ -29,6 +33,12 @@ def normalize_api_base(url):
             return base_url + '/v1'
 
     if url.endswith('/v1'):
+        return url
+
+    if '/v1/' in url:
+        return url
+    
+    if 'volces.com/api/v3' in url:
         return url
 
     if '/v1/' not in url:
@@ -54,7 +64,15 @@ def get_subjects():
 def create_subject():
     logger.log(LOG_CATEGORIES['USER_ACTION'], '创建学科请求', data=request.get_json())
     data = request.get_json()
-    subject = Subject(name=data.get('name'))
+    name = data.get('name')
+    
+    # 检查学科名称是否重复
+    existing_subject = Subject.query.filter_by(name=name).first()
+    if existing_subject:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '创建学科失败', error='学科名称已存在', name=name)
+        return jsonify({'error': '学科名称已存在'}), 400
+    
+    subject = Subject(name=name)
     db.session.add(subject)
     db.session.commit()
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '创建学科完成', subject_id=subject.id, subject_name=subject.name)
@@ -65,8 +83,17 @@ def create_subject():
 def get_subject(subject_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '获取学科详情请求', subject_id=subject_id)
     subject = Subject.query.get_or_404(subject_id)
+    subject_dict = subject.to_dict()
+    
+    if subject_dict.get('analysis_report'):
+        try:
+            if isinstance(subject_dict['analysis_report'], str):
+                subject_dict['analysis_report'] = json.loads(subject_dict['analysis_report'])
+        except:
+            pass
+    
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取学科详情完成', subject_id=subject.id, subject_name=subject.name)
-    return jsonify(subject.to_dict())
+    return jsonify(subject_dict)
 
 
 @api.route('/subjects/<int:subject_id>', methods=['PUT'])
@@ -74,7 +101,16 @@ def update_subject(subject_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '更新学科请求', subject_id=subject_id, data=request.get_json())
     subject = Subject.query.get_or_404(subject_id)
     data = request.get_json()
-    subject.name = data.get('name', subject.name)
+    new_name = data.get('name', subject.name)
+    
+    # 检查学科名称是否重复（排除当前学科）
+    if new_name != subject.name:
+        existing_subject = Subject.query.filter_by(name=new_name).first()
+        if existing_subject:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '更新学科失败', error='学科名称已存在', name=new_name)
+            return jsonify({'error': '学科名称已存在'}), 400
+    
+    subject.name = new_name
     subject.analysis_report = data.get('analysis_report', subject.analysis_report)
     db.session.commit()
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '更新学科完成', subject_id=subject.id, subject_name=subject.name)
@@ -104,10 +140,20 @@ def get_exams(subject_id):
 def create_exam():
     logger.log(LOG_CATEGORIES['USER_ACTION'], '创建考试请求', data=request.get_json())
     data = request.get_json()
+    subject_id = data.get('subject_id')
+    name = data.get('name')
+    date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
+    
+    # 检查同一学科内考试名称是否重复
+    existing_exam = Exam.query.filter_by(subject_id=subject_id, name=name).first()
+    if existing_exam:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '创建考试失败', error='考试名称已存在', name=name, subject_id=subject_id)
+        return jsonify({'error': '考试名称已存在'}), 400
+    
     exam = Exam(
-        subject_id=data.get('subject_id'),
-        name=data.get('name'),
-        date=datetime.strptime(data.get('date'), '%Y-%m-%d').date()
+        subject_id=subject_id,
+        name=name,
+        date=date
     )
     db.session.add(exam)
     db.session.commit()
@@ -128,7 +174,16 @@ def update_exam(exam_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '更新考试请求', exam_id=exam_id, data=request.get_json())
     exam = Exam.query.get_or_404(exam_id)
     data = request.get_json()
-    exam.name = data.get('name', exam.name)
+    new_name = data.get('name', exam.name)
+    
+    # 检查同一学科内考试名称是否重复（排除当前考试）
+    if new_name != exam.name:
+        existing_exam = Exam.query.filter_by(subject_id=exam.subject_id, name=new_name).first()
+        if existing_exam:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '更新考试失败', error='考试名称已存在', name=new_name, subject_id=exam.subject_id)
+            return jsonify({'error': '考试名称已存在'}), 400
+    
+    exam.name = new_name
     exam.analysis_report = data.get('analysis_report', exam.analysis_report)
     if 'date' in data:
         exam.date = datetime.strptime(data.get('date'), '%Y-%m-%d').date()
@@ -141,6 +196,22 @@ def update_exam(exam_id):
 def delete_exam(exam_id):
     logger.log(LOG_CATEGORIES['USER_ACTION'], '删除考试请求', exam_id=exam_id)
     exam = Exam.query.get_or_404(exam_id)
+    
+    image_paths = exam.get_image_paths()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
+    
+    for img_path in image_paths:
+        if img_path.startswith('/'):
+            img_path = img_path[1:]
+        full_path = os.path.join(project_root, img_path.replace('/', os.sep))
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除图片文件', path=full_path)
+            except Exception as e:
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '删除图片文件失败', path=full_path, error=str(e))
+    
     db.session.delete(exam)
     db.session.commit()
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除考试完成', exam_id=exam_id)
@@ -182,8 +253,6 @@ def update_question(question_id):
         question.coordinates = json.dumps(data['coordinates'])
     if 'knowledge_tags' in data:
         question.knowledge_tags = json.dumps(data['knowledge_tags'])
-    if 'difficulty' in data:
-        question.difficulty = data['difficulty']
     if 'user_score' in data:
         question.user_score = data['user_score']
     if 'standard_answer' in data:
@@ -212,7 +281,6 @@ def create_question(exam_id):
         max_score=data.get('max_score', 5),
         coordinates=json.dumps(data.get('coordinates', [])),
         knowledge_tags=json.dumps(data.get('knowledge_tags', [])),
-        difficulty=data.get('difficulty', 'medium'),
         user_answer_text=data.get('user_answer_text', ''),
         standard_answer=data.get('standard_answer', ''),
         user_score=data.get('user_score'),
@@ -303,7 +371,6 @@ def upload_image():
                         analysis=item.get('analysis', ''),
                         standard_answer=item.get('reference_answer', ''),
                         knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
-                        difficulty=int(item.get('difficulty', 3)) if item.get('difficulty') else 3,
                         max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
                         coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                         image_path=relative_path
@@ -339,14 +406,64 @@ def upload_image():
         db.session.commit()
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目数据保存成功', question_count=len(questions_data))
         
+        exam = Exam.query.get(exam_id)
+        if exam:
+            image_paths = exam.get_image_paths()
+            if relative_path not in image_paths:
+                image_paths.append(relative_path)
+                exam.set_image_paths(image_paths)
+                db.session.commit()
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '考试图片路径已更新', exam_id=exam_id, image_count=len(image_paths))
+        
         return jsonify({
             'image_path': relative_path,
             'vision_result': vision_result,
-            'questions': [q.to_dict() for q in questions_data]
+            'questions': [q.to_dict() for q in questions_data],
+            'exam': exam.to_dict()
         })
     
     logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '文件上传失败', error='Invalid file type')
     return jsonify({'error': 'Invalid file type'}), 400
+
+
+@api.route('/exams/<int:exam_id>/images/<path:image_path>', methods=['DELETE'])
+def delete_exam_image(exam_id, image_path):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '删除考试图片请求', exam_id=exam_id, image_path=image_path)
+    
+    exam = Exam.query.get_or_404(exam_id)
+    
+    image_paths = exam.get_image_paths()
+    image_path_normalized = '/' + image_path if not image_path.startswith('/') else image_path
+    
+    if image_path_normalized not in image_paths:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片不在考试中', image_path=image_path_normalized)
+        return jsonify({'error': 'Image not found in exam'}), 404
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
+    
+    full_path = image_path_normalized.lstrip('/')
+    absolute_path = os.path.join(project_root, full_path.replace('/', os.sep))
+    
+    if os.path.exists(absolute_path):
+        try:
+            os.remove(absolute_path)
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除图片文件成功', path=absolute_path)
+        except Exception as e:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '删除图片文件失败', error=str(e))
+            return jsonify({'error': f'Failed to delete file: {str(e)}'}), 500
+    
+    image_paths.remove(image_path_normalized)
+    exam.set_image_paths(image_paths)
+    db.session.commit()
+    
+    related_questions = Question.query.filter_by(exam_id=exam_id, image_path=image_path_normalized).all()
+    for q in related_questions:
+        db.session.delete(q)
+    db.session.commit()
+    
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '删除考试图片完成', exam_id=exam_id, remaining_images=len(image_paths))
+    return jsonify({'message': 'Image deleted', 'remaining_images': image_paths})
 
 
 @api.route('/extract-questions', methods=['POST'])
@@ -425,19 +542,18 @@ def extract_questions():
         
         questions_data = []
         if vision_result.get('is_exam_paper'):
-            # 删除现有的题目
-            Question.query.filter_by(exam_id=exam_id).delete()
+            existing_questions = Question.query.filter_by(exam_id=exam_id).all()
+            start_index = len(existing_questions) + 1
             
-            for item in vision_result.get('items', []):
+            for idx, item in enumerate(vision_result.get('items', [])):
                 question = Question(
                     exam_id=exam_id,
-                    question_index=item.get('index') or item.get('question_number') or item.get('questionNumber', ''),
+                    question_index=str(start_index + idx),
                     ocr_text=item.get('text') or item.get('question_stem') or item.get('questionStem', ''),
                     student_answer=item.get('student_answer', ''),
                     analysis=item.get('analysis', ''),
                     standard_answer=item.get('reference_answer', ''),
                     knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
-                    difficulty=int(item.get('difficulty', 3)) if item.get('difficulty') else 3,
                     max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
                     coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                     image_path=request.form.get('image_path')
@@ -470,40 +586,112 @@ def extract_questions():
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
-@api.route('/analyze-metadata/<int:question_id>', methods=['POST'])
-def analyze_metadata(question_id):
-    logger.log(LOG_CATEGORIES['USER_ACTION'], '分析题目元数据请求', question_id=question_id)
-    
-    question = Question.query.get_or_404(question_id)
-    
-    metadata_agent = MetadataAgent()
-    custom_prompt = get_prompt('metadata')
+@api.route('/extract-questions-batch', methods=['POST'])
+def extract_questions_batch():
+    try:
+        logger.log(LOG_CATEGORIES['USER_ACTION'], '批量提取题目请求', exam_id=request.form.get('exam_id'))
 
-    settings = Setting.query.all()
-    settings_dict = {s.key: s.value for s in settings}
-    api_key = settings_dict.get('metadata_api_key') or settings_dict.get('api_key') or os.getenv('AI_METADATA_API_KEY') or os.getenv('AI_API_KEY')
-    api_base = settings_dict.get('metadata_api_base') or settings_dict.get('api_base') or os.getenv('AI_METADATA_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
-    api_base = normalize_api_base(api_base)
-    model = settings_dict.get('model_metadata') or os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini')
+        exam_id_str = request.form.get('exam_id')
+        image_paths = request.form.getlist('image_paths')
 
-    if api_key and api_key.strip():
-        metadata_agent.client.api_key = api_key
-    if api_base and api_base.strip():
-        metadata_agent.client.base_url = api_base
-    if model and model.strip():
-        metadata_agent.metadata_model = model
+        if not exam_id_str:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量提取题目失败', error='No exam id provided')
+            return jsonify({'error': 'No exam id provided'}), 400
 
-    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'MetadataAgent 使用设置',
-              api_key_set=bool(api_key), api_base=api_base, model=model)
+        if not image_paths:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量提取题目失败', error='No image paths provided')
+            return jsonify({'error': 'No image paths provided'}), 400
 
-    result = metadata_agent.analyze(question.ocr_text, custom_prompt)
-    
-    question.knowledge_tags = json.dumps(result.get('knowledge_tags', []))
-    question.difficulty = result.get('difficulty', 3)
-    db.session.commit()
-    
-    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '题目元数据分析完成', question_id=question_id, knowledge_tags=result.get('knowledge_tags', []), difficulty=result.get('difficulty', 3))
-    return jsonify(question.to_dict())
+        try:
+            exam_id = int(exam_id_str)
+        except ValueError:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量提取题目失败', error=f'Invalid exam id: {exam_id_str}')
+            return jsonify({'error': f'Invalid exam id: {exam_id_str}'}), 400
+
+        exam = Exam.query.get(exam_id)
+        if not exam:
+            logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量提取题目失败', error=f'Exam not found: {exam_id}')
+            return jsonify({'error': f'Exam not found: {exam_id}'}), 404
+
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '批量提取题目', exam_id=exam_id, image_count=len(image_paths))
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(base_dir, '..', '..'))
+
+        custom_prompt = get_prompt('vision')
+        vision_agent = VisionAgent()
+
+        settings = Setting.query.all()
+        settings_dict = {s.key: s.value for s in settings}
+        api_key = settings_dict.get('vision_api_key') or settings_dict.get('api_key') or os.getenv('AI_VISION_API_KEY') or os.getenv('AI_API_KEY')
+        api_base = settings_dict.get('vision_api_base') or settings_dict.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+        api_base = normalize_api_base(api_base)
+        model = settings_dict.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+
+        if api_key and api_key.strip():
+            vision_agent.client.api_key = api_key
+        if api_base and api_base.strip():
+            vision_agent.client.base_url = api_base
+        if model and model.strip():
+            vision_agent.vision_model = model
+
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'VisionAgent 使用设置(批量)',
+                  api_key_set=bool(api_key), api_base=api_base, model=model)
+
+        existing_questions = Question.query.filter_by(exam_id=exam_id).all()
+        start_index = len(existing_questions)
+        
+        all_questions = list(existing_questions)
+        question_index = start_index + 1
+
+        for idx, image_path in enumerate(image_paths):
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '处理图片', index=idx, path=image_path)
+            
+            if image_path.startswith('/'):
+                image_path = image_path[1:]
+            if not image_path.startswith('app/'):
+                image_path = 'app/' + image_path
+
+            absolute_path = os.path.join(project_root, image_path.replace('/', os.sep))
+
+            if not os.path.exists(absolute_path):
+                logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '图片文件不存在', image_path=absolute_path)
+                continue
+
+            vision_result = vision_agent.analyze(absolute_path, custom_prompt)
+            logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'Vision分析完成', path=image_path, is_exam_paper=vision_result.get('is_exam_paper'), item_count=len(vision_result.get('items', [])))
+
+            if vision_result.get('is_exam_paper'):
+                for item in vision_result.get('items', []):
+                    question = Question(
+                        exam_id=exam_id,
+                        question_index=str(question_index),
+                        ocr_text=item.get('text') or item.get('question_stem') or item.get('questionStem', ''),
+                        student_answer=item.get('student_answer', ''),
+                        analysis=item.get('analysis', ''),
+                        standard_answer=item.get('reference_answer', ''),
+                        knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                        max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
+                        coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
+                        image_path=image_path
+                    )
+                    db.session.add(question)
+                    all_questions.append(question)
+                    question_index += 1
+
+        db.session.commit()
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '批量提取题目完成', question_count=len(all_questions))
+
+        return jsonify({
+            'questions': [q.to_dict() for q in all_questions]
+        })
+
+    except Exception as e:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '批量提取题目异常', error=str(e))
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+
 
 
 @api.route('/grade/<int:question_id>', methods=['POST'])
@@ -672,12 +860,77 @@ def analyze_exam(exam_id):
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AnalysisAgent 使用设置',
               api_key_set=bool(api_key), api_base=api_base, model=model)
 
+    logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '分析请求 - 发送数据',
+              exam_name=exam.name,
+              question_count=len(questions),
+              sample_question=questions[0].to_dict() if questions else 'None')
+
     result = analysis_agent.analyze(exam_data, custom_prompt)
-    
+
+    logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], '分析请求 - 返回结果',
+              result=str(result)[:500])
+
     exam.analysis_report = json.dumps(result, ensure_ascii=False)
     db.session.commit()
-    
+
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '考试分析完成', exam_id=exam_id, exam_name=exam.name)
+    return jsonify(result)
+
+
+@api.route('/analyze-subject/<int:subject_id>', methods=['POST'])
+def analyze_subject(subject_id):
+    logger.log(LOG_CATEGORIES['USER_ACTION'], '学科分析请求', subject_id=subject_id)
+    
+    subject = Subject.query.get_or_404(subject_id)
+    exams = Exam.query.filter_by(subject_id=subject_id).all()
+    
+    subject_data = {
+        'id': subject.id,
+        'name': subject.name,
+        'analysis_report': subject.analysis_report,
+        'exam_count': len(exams),
+        'created_at': subject.created_at.isoformat() if subject.created_at else None,
+        'updated_at': subject.updated_at.isoformat() if subject.updated_at else None,
+        'exams': [exam.to_dict(include_questions=True) for exam in exams]
+    }
+    
+    subject_analysis_agent = SubjectAnalysisAgent()
+    custom_prompt = get_prompt('Subject_Ana')
+
+    settings = Setting.query.all()
+    settings_dict = {s.key: s.value for s in settings}
+    api_key = settings_dict.get('subject_analysis_api_key') or settings_dict.get('analysis_api_key') or settings_dict.get('api_key') or os.getenv('AI_SUBJECT_ANALYSIS_API_KEY') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
+    api_base = settings_dict.get('subject_analysis_api_base') or settings_dict.get('analysis_api_base') or settings_dict.get('api_base') or os.getenv('AI_SUBJECT_ANALYSIS_API_BASE') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
+    api_base = normalize_api_base(api_base)
+    model = settings_dict.get('model_subject_analysis') or settings_dict.get('model_analysis') or os.getenv('AI_MODEL_SUBJECT_ANALYSIS') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+
+    if api_key and api_key.strip():
+        subject_analysis_agent.client.api_key = api_key
+    if api_base and api_base.strip():
+        subject_analysis_agent.client.base_url = api_base
+    if model and model.strip():
+        subject_analysis_agent.analysis_model = model
+
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'SubjectAnalysisAgent 使用设置',
+              api_key_set=bool(api_key), api_base=api_base, model=model)
+
+    logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '学科分析请求 - 发送数据',
+              subject_name=subject.name,
+              exam_count=len(exams),
+              sample_exam=exams[0].to_dict(include_questions=True) if exams else 'None')
+
+    result = subject_analysis_agent.analyze(subject_data, custom_prompt)
+
+    logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], '学科分析请求 - 返回结果',
+              result=str(result)[:500])
+
+    analysis_report_content = result.get('analysis_report', '')
+    if isinstance(analysis_report_content, dict):
+        analysis_report_content = json.dumps(analysis_report_content, ensure_ascii=False)
+    subject.analysis_report = analysis_report_content
+    db.session.commit()
+
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '学科分析完成', subject_id=subject_id, subject_name=subject.name)
     return jsonify(result)
 
 
@@ -695,29 +948,38 @@ def get_prompt_by_id(prompt_id):
 
 @api.route('/prompts/<int:prompt_id>', methods=['PUT'])
 def update_prompt(prompt_id):
-    prompt = Prompt.query.get_or_404(prompt_id)
-    data = request.get_json()
-    
-    prompt.system_prompt = data.get('system_prompt', prompt.system_prompt)
-    prompt.role = data.get('role', prompt.role)
-    prompt.description = data.get('description', prompt.description)
-    prompt.is_active = data.get('is_active', prompt.is_active)
-    
-    db.session.commit()
-    return jsonify(prompt.to_dict())
+    try:
+        prompt = Prompt.query.get_or_404(prompt_id)
+        data = request.get_json()
+        
+        logger.log(LOG_CATEGORIES['USER_ACTION'], '更新Prompt请求', 
+                   prompt_id=prompt_id, 
+                   prompt_name=prompt.name,
+                   data_keys=list(data.keys()) if data else None)
+        
+        prompt.system_prompt = data.get('system_prompt', prompt.system_prompt)
+        prompt.role = data.get('role', prompt.role)
+        prompt.description = data.get('description', prompt.description)
+        prompt.is_active = data.get('is_active', prompt.is_active)
+        
+        db.session.commit()
+        return jsonify(prompt.to_dict())
+    except Exception as e:
+        logger.log(LOG_CATEGORIES['ERROR_EXCEPTION'], '更新Prompt失败', error=str(e))
+        return jsonify({'error': str(e)}), 500
 
 
 @api.route('/prompts/<int:prompt_id>/reset', methods=['POST'])
 def reset_prompt(prompt_id):
-    from app.agents.ai_agents import VisionAgent, MetadataAgent, GradingAgent, AnalysisAgent
+    from app.agents.ai_agents import VisionAgent, GradingAgent, AnalysisAgent
     
     prompt = Prompt.query.get_or_404(prompt_id)
     
     defaults = {
         'vision': VisionAgent.DEFAULT_PROMPT,
-        'metadata': MetadataAgent.DEFAULT_PROMPT,
         'grading': GradingAgent.DEFAULT_PROMPT,
-        'analysis': AnalysisAgent.DEFAULT_PROMPT
+        'analysis': AnalysisAgent.DEFAULT_PROMPT,
+        'Subject_Ana': load_prompt_from_file('Subject_Ana')
     }
     
     prompt.system_prompt = defaults.get(prompt.name, prompt.system_prompt)
@@ -820,13 +1082,22 @@ def get_dashboard(subject_id):
         total_score = sum(q.max_score or 0 for q in questions)
         user_score = sum(q.user_score or 0 for q in questions)
         
+        analysis_report = exam.analysis_report
+        if analysis_report:
+            try:
+                if isinstance(analysis_report, str):
+                    analysis_report = json.loads(analysis_report)
+            except:
+                analysis_report = analysis_report
+        
         exam_data.append({
             'id': exam.id,
             'name': exam.name,
             'date': exam.date.isoformat() if exam.date else '',
             'total_score': total_score,
             'user_score': user_score,
-            'score_rate': round(user_score / total_score * 100, 1) if total_score > 0 else 0
+            'score_rate': round(user_score / total_score * 100, 1) if total_score > 0 else 0,
+            'analysis_report': analysis_report
         })
     
     return jsonify({

@@ -17,7 +17,6 @@ class Question(db.Model):
     user_answer_image_path = db.Column(db.String(500), default='')
     standard_answer = db.Column(db.Text, default='')
     knowledge_tags = db.Column(db.Text, default='[]')
-    difficulty = db.Column(db.Integer, default=3)
     max_score = db.Column(db.Float, default=10.0)
     user_score = db.Column(db.Float, default=None)
     feedback = db.Column(db.Text, default='')
@@ -56,7 +55,6 @@ class Question(db.Model):
             'user_answer_image_path': self.user_answer_image_path,
             'standard_answer': self.standard_answer,
             'knowledge_tags': self.get_knowledge_tags(),
-            'difficulty': self.difficulty,
             'max_score': self.max_score,
             'user_score': self.user_score,
             'feedback': self.feedback

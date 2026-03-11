@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo ================================================
-echo GradeAI - Auto Start
+echo PRTS - Auto Start
 echo ================================================
 echo.
 
@@ -10,7 +10,7 @@ taskkill /f /im python.exe 2>nul
 
 echo.
 echo Starting service...
-start "GradeAI" cmd /k "python run.py"
+start "PRTS" cmd /k "python run.py"
 
 echo.
 echo Please visit: http://127.0.0.1:5000

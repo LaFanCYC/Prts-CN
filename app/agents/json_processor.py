@@ -126,7 +126,6 @@ class JSONProcessor:
             'reference_answer': ['referenceAnswer', 'standard_answer', 'standardAnswer'],
             'analysis': ['analysis_text'],
             'knowledge_point': ['knowledgePoint', 'knowledge_point', 'knowledge'],
-            'difficulty': ['difficulty_level', 'difficultyLevel'],
             'bbox': ['bbox', 'coordinates', 'position']
         }
 
@@ -148,8 +147,6 @@ class JSONProcessor:
                         normalized[new_field] = ''
                     elif new_field == 'score':
                         normalized[new_field] = '10'
-                    elif new_field == 'difficulty':
-                        normalized[new_field] = ''
 
         # 处理坐标
         if 'bbox' not in normalized:
@@ -171,13 +168,13 @@ class JSONProcessor:
         验证并规范化Metadata Agent的返回结果
         """
         if not result:
-            return {"knowledge_tags": [], "difficulty": 3}
+            return {"knowledge_tags": []}
 
         if isinstance(result, str):
             result = JSONProcessor.parse_json(result, default={})
 
         if not isinstance(result, dict):
-            return {"knowledge_tags": [], "difficulty": 3}
+            return {"knowledge_tags": []}
 
         # 确保knowledge_tags是数组
         knowledge_tags = result.get('knowledge_tags', [])
@@ -186,18 +183,8 @@ class JSONProcessor:
         elif not isinstance(knowledge_tags, list):
             knowledge_tags = []
 
-        # 确保difficulty是整数
-        difficulty = result.get('difficulty', 3)
-        try:
-            difficulty = int(difficulty)
-            if difficulty < 1 or difficulty > 5:
-                difficulty = 3
-        except (ValueError, TypeError):
-            difficulty = 3
-
         return {
-            "knowledge_tags": knowledge_tags,
-            "difficulty": difficulty
+            "knowledge_tags": knowledge_tags
         }
 
     @staticmethod
@@ -212,7 +199,6 @@ class JSONProcessor:
             "earned_score": 0,
             "reference_answer": "",
             "analysis": "",
-            "difficulty": "",
             "knowledge_point": ""
         }
 
@@ -240,7 +226,6 @@ class JSONProcessor:
             "earned_score": earned_score,
             "feedback": result.get('feedback', result.get('analysis', '')),
             "analysis": result.get('analysis', result.get('feedback', '')),
-            "difficulty": result.get('difficulty', ''),
             "knowledge_point": result.get('knowledge_point', result.get('knowledge_point', ''))
         }
 

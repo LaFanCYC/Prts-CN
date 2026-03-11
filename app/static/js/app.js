@@ -4,6 +4,8 @@ let currentSubjectId = null;
 let currentExamId = null;
 let currentQuestions = [];
 let currentImage = null;
+let currentImageList = [];
+let currentImageIndex = 0;
 let imageScale = 1;
 let selectedQuestionIndex = null;
 
@@ -73,6 +75,7 @@ async function loadSubjects() {
                 <p class="exam-count">${s.exam_count || 0} 场考试</p>
                 <div class="card-actions">
                     <button class="btn btn-secondary btn-view-exams" data-id="${s.id}">查看考试</button>
+                    <button class="btn btn-secondary btn-analyze-subject" data-id="${s.id}">生成学科分析</button>
                     <button class="btn btn-secondary btn-delete-subject" data-id="${s.id}">删除</button>
                 </div>
             </div>
@@ -93,6 +96,13 @@ async function loadSubjects() {
                     await apiRequest(`/subjects/${btn.dataset.id}`, { method: 'DELETE' });
                     loadSubjects();
                 }
+            });
+        });
+        
+        grid.querySelectorAll('.btn-analyze-subject').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await generateAnalysisForSubject(parseInt(btn.dataset.id));
             });
         });
         
@@ -181,7 +191,12 @@ async function loadCorrectionWorkspace() {
         const questions = await apiRequest(`/exams/${currentExamId}/questions`);
         currentQuestions = questions;
         
-        if (questions.length > 0 && questions[0].image_path) {
+        if (exam.image_paths && exam.image_paths.length > 0) {
+            currentImageList = exam.image_paths;
+            currentImageIndex = 0;
+            currentImage = currentImageList[currentImageIndex];
+            loadImageToCanvas(currentImage);
+        } else if (questions.length > 0 && questions[0].image_path) {
             currentImage = questions[0].image_path;
             loadImageToCanvas(currentImage);
         } else {
@@ -204,12 +219,112 @@ async function loadCorrectionWorkspace() {
     }
 }
 
+async function loadUploadedImagesForExam() {
+    try {
+        const exam = await apiRequest(`/exams/${currentExamId}`);
+        const imagePaths = exam.image_paths || [];
+        
+        currentImageList = imagePaths;
+        currentImageIndex = 0;
+        if (imagePaths.length > 0) {
+            currentImage = imagePaths[0];
+        }
+        
+        const section = document.getElementById('uploaded-images-section');
+        const list = document.getElementById('uploaded-images-list');
+        
+        if (imagePaths.length > 0) {
+            section.style.display = 'block';
+            let html = '';
+            imagePaths.forEach((path, index) => {
+                const fileName = path.split('/').pop();
+                html += `
+                    <div class="uploaded-image-item" data-path="${path}" data-index="${index}">
+                        <img src="${path}" alt="试卷图片 ${index + 1}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%23999%22 font-size=%2212%22>图片未找到</text></svg>'">
+                        <button class="delete-btn" onclick="deleteImageFromExam('${path}')" title="删除">×</button>
+                        <div class="image-name">${fileName}</div>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+            
+            list.querySelectorAll('.uploaded-image-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('delete-btn')) return;
+                    const path = item.dataset.path;
+                    const idx = parseInt(item.dataset.index);
+                    currentImage = path;
+                    currentImageIndex = idx;
+                    loadImageToCanvas(currentImage);
+                });
+            });
+        } else {
+            section.style.display = 'none';
+        }
+        
+        return imagePaths;
+    } catch (error) {
+        console.error('加载已上传图片失败:', error);
+        return [];
+    }
+}
+
+async function deleteImageFromExam(imagePath) {
+    if (!confirm('确定要删除这张图片吗？')) return;
+    
+    try {
+        const response = await apiRequest(`/exams/${currentExamId}/images/${encodeURIComponent(imagePath)}`, {
+            method: 'DELETE'
+        });
+        
+        alert('图片已删除');
+        await loadUploadedImagesForExam();
+        
+        if (currentImage === imagePath) {
+            const remaining = response.remaining_images || [];
+            if (remaining.length > 0) {
+                currentImage = remaining[0];
+                currentImageIndex = 0;
+                loadImageToCanvas(currentImage);
+            } else {
+                currentImage = null;
+                currentImageList = [];
+                currentImageIndex = 0;
+            }
+        }
+        
+    } catch (error) {
+        console.error('删除图片失败:', error);
+        alert('删除失败: ' + error.message);
+    }
+}
+
 function showExamActionsModal() {
     showModal('exam-actions');
 }
 
 function showUploadModalForExam() {
     showExamActionsModal();
+}
+
+function updateImageNav() {
+    const nav = document.getElementById('image-nav');
+    const counter = document.getElementById('image-counter');
+
+    if (currentImageList.length > 1) {
+        nav.style.display = 'flex';
+        counter.textContent = `${currentImageIndex + 1} / ${currentImageList.length}`;
+    } else {
+        nav.style.display = 'none';
+    }
+}
+
+function highlightQuestionForCurrentImage() {
+    const currentImgPath = currentImage;
+    const questionIndex = currentQuestions.findIndex(q => q.image_path === currentImgPath);
+    if (questionIndex >= 0) {
+        selectQuestion(questionIndex);
+    }
 }
 
 function loadImageToCanvas(imagePath) {
@@ -278,10 +393,23 @@ function renderQuestionsList() {
         return;
     }
     
-    list.innerHTML = currentQuestions.map((q, index) => `
+    list.innerHTML = `
+        <div class="questions-header" style="display: flex; align-items: center; margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <input type="checkbox" id="select-all-questions" style="margin-right: 10px;">
+            <label for="select-all-questions" style="margin-right: 20px;">全选</label>
+            <button id="batch-delete-btn" class="btn btn-danger" style="padding: 6px 12px; font-size: 14px; display: none;">批量删除</button>
+        </div>
+    ` + currentQuestions.map((q, index) => `
         <div class="question-item" data-index="${index}">
             <div class="question-header">
-                <span class="question-index">第 ${q.question_index} 题</span>
+                <input type="checkbox" class="question-checkbox" data-index="${index}" style="margin-right: 10px;">
+                <span class="question-index">第 </span>
+                <input type="text" class="question-index-input"
+                       value="${q.question_index || index + 1}"
+                       data-field="question_index"
+                       data-index="${index}"
+                       style="width: 60px; padding: 4px 8px; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 14px;"> 
+                <span class="question-index"> 题</span>
                 <div class="question-score">
                     <span class="score-tag">满分: ${q.max_score || 10}分</span>
                     <input type="number" class="max-score-input"
@@ -297,44 +425,24 @@ function renderQuestionsList() {
             <div class="ocr-info">
                 ${q.student_answer ? `
                 <div class="ocr-field">
-                    <span class="ocr-label">【OCR识别】学生答案：</span>
+                    <span class="ocr-label">学生答案：</span>
                     <input type="text" class="ocr-input ocr-student-answer-input"
                            value="${q.student_answer || ''}"
                            data-field="student_answer"
                            data-index="${index}"
-                           placeholder="OCR识别结果，可手动修改">
+                           placeholder="请输入学生答案">
                 </div>
                 ` : ''}
                 <div class="ocr-field">
-                    <span class="ocr-label">【OCR识别】知识点：</span>
+                    <span class="ocr-label">知识点：</span>
                     <input type="text" class="ocr-input ocr-knowledge-input"
                            value="${q.knowledge_tags && q.knowledge_tags.length > 0 ? q.knowledge_tags.join(', ') : ''}"
                            data-field="knowledge_tags"
                            data-index="${index}"
                            placeholder="多个知识点用逗号分隔">
                 </div>
-                <div class="ocr-field">
-                    <span class="ocr-label">【OCR识别】难度：</span>
-                    <select class="ocr-select ocr-difficulty-input"
-                            data-field="difficulty"
-                            data-index="${index}">
-                        <option value="1" ${q.difficulty == 1 ? 'selected' : ''}>简单</option>
-                        <option value="2" ${q.difficulty == 2 ? 'selected' : ''}>较简单</option>
-                        <option value="3" ${(!q.difficulty || q.difficulty == 3) ? 'selected' : ''}>中等</option>
-                        <option value="4" ${q.difficulty == 4 ? 'selected' : ''}>较难</option>
-                        <option value="5" ${q.difficulty == 5 ? 'selected' : ''}>困难</option>
-                    </select>
-                </div>
             </div>
 
-            <div class="answer-section">
-                <label class="answer-label">学生作答：</label>
-                <textarea class="answer-input"
-                          placeholder="请输入作答内容..."
-                          data-field="user_answer_text"
-                          data-index="${index}">${q.user_answer_text || ''}</textarea>
-            </div>
-            
             <div class="standard-answer-section">
                 <label class="answer-label">标准答案：</label>
                 <textarea class="standard-answer-input" 
@@ -355,7 +463,12 @@ function renderQuestionsList() {
                 <div class="question-result">
                     <div class="score-display">
                         <span>得分：</span>
-                        <span class="score-value">${q.user_score} / ${q.max_score}</span>
+                        <input type="number" class="user-score-input"
+                               value="${q.user_score}"
+                               data-field="user_score"
+                               data-index="${index}"
+                               min="0" max="${q.max_score}" step="0.5"> 
+                        <span> / ${q.max_score} 分</span>
                     </div>
                 </div>
             ` : ''}
@@ -380,6 +493,38 @@ function renderQuestionsList() {
             });
             
             currentQuestions[index].max_score = value;
+        });
+        
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    list.querySelectorAll('.question-index-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const value = e.target.value;
+            
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ question_index: value })
+            });
+            
+            currentQuestions[index].question_index = value;
+        });
+        
+        input.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    list.querySelectorAll('.user-score-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const index = parseInt(e.target.dataset.index);
+            const value = parseFloat(e.target.value) || 0;
+            
+            await apiRequest(`/questions/${currentQuestions[index].id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ user_score: value })
+            });
+            
+            currentQuestions[index].user_score = value;
         });
         
         input.addEventListener('click', (e) => e.stopPropagation());
@@ -506,6 +651,71 @@ function renderQuestionsList() {
             }
         });
     });
+    
+    // 全选功能
+    const selectAllCheckbox = document.getElementById('select-all-questions');
+    const batchDeleteBtn = document.getElementById('batch-delete-btn');
+    const checkboxes = list.querySelectorAll('.question-checkbox');
+    
+    selectAllCheckbox.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = isChecked;
+        });
+        updateBatchDeleteBtn();
+    });
+    
+    // 单个复选框变化
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+            updateSelectAllStatus();
+            updateBatchDeleteBtn();
+        });
+        
+        // 阻止复选框点击事件冒泡到题目项
+        checkbox.addEventListener('click', (e) => e.stopPropagation());
+    });
+    
+    // 批量删除按钮
+    batchDeleteBtn.addEventListener('click', async () => {
+        const selectedCheckboxes = list.querySelectorAll('.question-checkbox:checked');
+        const selectedIndices = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.index));
+        
+        if (selectedIndices.length === 0) return;
+        
+        if (!confirm(`确定要删除选中的 ${selectedIndices.length} 道题目吗？`)) {
+            return;
+        }
+        
+        try {
+            // 按索引从大到小删除，避免索引变化
+            selectedIndices.sort((a, b) => b - a);
+            
+            for (const index of selectedIndices) {
+                const question = currentQuestions[index];
+                await apiRequest(`/questions/${question.id}`, {
+                    method: 'DELETE'
+                });
+                currentQuestions.splice(index, 1);
+            }
+            
+            renderQuestionsList();
+            alert(`已删除 ${selectedIndices.length} 道题目`);
+        } catch (error) {
+            console.error('批量删除失败:', error);
+            alert('批量删除失败: ' + error.message);
+        }
+    });
+    
+    function updateSelectAllStatus() {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        selectAllCheckbox.checked = allChecked;
+    }
+    
+    function updateBatchDeleteBtn() {
+        const selectedCount = list.querySelectorAll('.question-checkbox:checked').length;
+        batchDeleteBtn.style.display = selectedCount > 0 ? 'block' : 'none';
+    }
 }
 
 function selectQuestion(index) {
@@ -572,17 +782,254 @@ async function loadDashboard() {
 async function loadDashboardData(subjectId) {
     try {
         const data = await apiRequest(`/dashboard/${subjectId}`);
+        const subject = await apiRequest(`/subjects/${subjectId}`);
         
         renderTrendChart(data.exams);
         renderRateChart(data.exams);
         
+        const subjectAnalysisSection = document.getElementById('subject-analysis-section');
+        const subjectAnalysisContent = document.getElementById('subject-analysis-content');
+        
+        if (subject.analysis_report) {
+            let reportData = null;
+            try {
+                reportData = typeof subject.analysis_report === 'string' 
+                    ? JSON.parse(subject.analysis_report) 
+                    : subject.analysis_report;
+            } catch (e) {
+                reportData = { analysis_report: subject.analysis_report };
+            }
+            
+            const reportText = reportData.analysis_report || reportData.summary || subject.analysis_report || '暂无分析报告';
+            const processedText = reportText.replace(/\\n/g, '\n').replace(/\n/g, '<br>').replace(/\\t/g, '\t').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+            subjectAnalysisContent.innerHTML = `<div class="subject-report-text">${processedText}</div>`;
+            subjectAnalysisSection.style.display = 'block';
+        } else {
+            subjectAnalysisSection.style.display = 'none';
+        }
+        
         const analysis = document.getElementById('exam-analysis');
         if (data.exams.length === 0) {
             analysis.innerHTML = '<p>暂无考试数据</p>';
+        } else {
+            renderExamAnalysis(data.exams);
         }
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
     }
+}
+
+function renderExamAnalysis(exams) {
+    const container = document.getElementById('exam-analysis');
+    let html = '<h2>考试分析报告</h2>';
+    
+    exams.forEach(exam => {
+        let reportData = null;
+        if (exam.analysis_report) {
+            try {
+                reportData = typeof exam.analysis_report === 'string' 
+                    ? JSON.parse(exam.analysis_report) 
+                    : exam.analysis_report;
+            } catch (e) {
+                reportData = { summary: exam.analysis_report };
+            }
+        }
+        
+        const hasReport = reportData && (reportData.summary || reportData.exam_name);
+        
+        html += `
+            <div class="exam-report-card" data-exam-id="${exam.id}">
+                <div class="exam-report-header">
+                    <h3>${exam.name}</h3>
+                    <span class="exam-date">${exam.date}</span>
+                </div>
+                ${hasReport ? `
+                    <div class="exam-report-content">
+                        <div class="score-summary">
+                            <span class="score-item">总分: <strong>${reportData.total_score || exam.total_score}</strong></span>
+                            <span class="score-item">得分: <strong>${reportData.total_earned_score || exam.user_score}</strong></span>
+                            <span class="score-item">得分率: <strong>${reportData.score_analysis?.score_rate || exam.score_rate + '%'}</strong></span>
+                        </div>
+                        <div class="summary-text">
+                            <h4>分析总结:</h4>
+                            <p>${(reportData.summary || '暂无总结').replace(/\\n/g, '\n').replace(/\n/g, '<br>')}</p>
+                        </div>
+                        <div class="report-actions">
+                            <button class="btn btn-sm btn-primary" onclick="editAnalysisReport(${exam.id})">编辑报告</button>
+                            <button class="btn btn-sm btn-secondary" onclick="viewFullReport(${exam.id})">查看详情</button>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="no-report">
+                        <p>暂无分析报告</p>
+                        <button class="btn btn-sm btn-success" onclick="generateAnalysisForExam(${exam.id})">生成分析报告</button>
+                    </div>
+                `}
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+async function generateAnalysisForExam(examId, event) {
+    if (!confirm('确定要生成分析报告吗？请确保已完成所有题目的批改。')) return;
+    
+    const btn = event?.target;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '生成中...';
+    }
+    
+    try {
+        const response = await apiRequest(`/analyze-exam/${examId}`, {
+            method: 'POST'
+        });
+        
+        alert('分析报告生成成功！\n\n' +
+            `考试名称: ${response.exam_name || '未命名'}\n` +
+            `总分: ${response.total_score}\n` +
+            `得分: ${response.total_earned_score}\n` +
+            `得分率: ${response.score_analysis?.score_rate || '0%'}`);
+        
+        loadDashboardData(currentSubjectId);
+    } catch (error) {
+        console.error('生成分析报告失败:', error);
+        alert('生成分析报告失败: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '生成分析报告';
+        }
+    }
+}
+
+async function generateAnalysisForSubject(subjectId) {
+    if (!confirm('确定要生成学科分析报告吗？请确保该学科下已有考试数据。')) return;
+    
+    const subject = await apiRequest(`/subjects/${subjectId}`);
+    if (!subject.exam_count || subject.exam_count === 0) {
+        alert('该学科下没有考试数据，无法生成分析报告。');
+        return;
+    }
+    
+    try {
+        await apiRequest(`/analyze-subject/${subjectId}`, {
+            method: 'POST'
+        });
+        
+        alert('学科分析完成！\n\n请前往"分析仪表盘"查看详细报告');
+        
+        loadSubjects();
+    } catch (error) {
+        console.error('生成学科分析报告失败:', error);
+        alert('生成学科分析报告失败: ' + error.message);
+    }
+}
+
+async function editAnalysisReport(examId) {
+    try {
+        const exam = await apiRequest(`/exams/${examId}`);
+        let reportData = null;
+        
+        if (exam.analysis_report) {
+            try {
+                reportData = typeof exam.analysis_report === 'string' 
+                    ? JSON.parse(exam.analysis_report) 
+                    : exam.analysis_report;
+            } catch (e) {
+                reportData = { summary: exam.analysis_report };
+            }
+        }
+        
+        const modalContent = `
+            <div class="form-group">
+                <label>考试名称</label>
+                <input type="text" id="edit-exam-name" class="form-input" value="${reportData?.exam_name || exam.name || ''}">
+            </div>
+            <div class="form-group">
+                <label>总分</label>
+                <input type="number" id="edit-total-score" class="form-input" value="${reportData?.total_score || exam.total_score || 0}">
+            </div>
+            <div class="form-group">
+                <label>得分</label>
+                <input type="number" id="edit-earned-score" class="form-input" value="${reportData?.total_earned_score || exam.user_score || 0}">
+            </div>
+            <div class="form-group">
+                <label>分析总结</label>
+                <textarea id="edit-summary" class="form-textarea" rows="8">${reportData?.summary || ''}</textarea>
+            </div>
+        `;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.id = 'edit-report-modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>编辑分析报告</h2>
+                    <span class="close" onclick="closeEditModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    ${modalContent}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                    <button class="btn btn-primary" onclick="saveAnalysisReport(${examId})">保存</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+    } catch (error) {
+        console.error('加载考试数据失败:', error);
+        alert('加载失败: ' + error.message);
+    }
+}
+
+function closeEditModal() {
+    const modal = document.getElementById('edit-report-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function saveAnalysisReport(examId) {
+    const examName = document.getElementById('edit-exam-name').value;
+    const totalScore = parseFloat(document.getElementById('edit-total-score').value) || 0;
+    const earnedScore = parseFloat(document.getElementById('edit-earned-score').value) || 0;
+    const summary = document.getElementById('edit-summary').value;
+    
+    const reportData = {
+        exam_name: examName,
+        total_score: totalScore,
+        total_earned_score: earnedScore,
+        summary: summary,
+        score_analysis: {
+            total_score: totalScore,
+            total_earned_score: earnedScore,
+            score_rate: totalScore > 0 ? (earnedScore / totalScore * 100).toFixed(1) + '%' : '0%'
+        }
+    };
+    
+    try {
+        await apiRequest(`/exams/${examId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ analysis_report: JSON.stringify(reportData) })
+        });
+        
+        alert('报告保存成功！');
+        closeEditModal();
+        loadDashboardData(currentSubjectId);
+    } catch (error) {
+        console.error('保存失败:', error);
+        alert('保存失败: ' + error.message);
+    }
+}
+
+function viewFullReport(examId) {
+    window.location.href = `?page=correction&examId=${examId}`;
 }
 
 function renderTrendChart(exams) {
@@ -675,11 +1122,13 @@ function renderRateChart(exams) {
 async function loadPrompts() {
     try {
         const prompts = await apiRequest('/prompts');
+        // 过滤掉metadata记录
+        const filteredPrompts = prompts.filter(p => p.name !== 'metadata');
         const list = document.getElementById('prompts-list');
         
         list.innerHTML = `
             <h3>可用 Prompts</h3>
-            ${prompts.map(p => `
+            ${filteredPrompts.map(p => `
                 <div class="prompt-item" data-id="${p.id}" data-name="${p.name}">
                     <h4>${p.role || p.name}</h4>
                     <p>${p.description}</p>
@@ -689,13 +1138,13 @@ async function loadPrompts() {
         
         list.querySelectorAll('.prompt-item').forEach(item => {
             item.addEventListener('click', () => {
-                const prompt = prompts.find(p => p.id === parseInt(item.dataset.id));
+                const prompt = filteredPrompts.find(p => p.id === parseInt(item.dataset.id));
                 showPromptEditor(prompt);
             });
         });
         
-        if (prompts.length > 0) {
-            showPromptEditor(prompts[0]);
+        if (filteredPrompts.length > 0) {
+            showPromptEditor(filteredPrompts[0]);
         }
     } catch (error) {
         console.error('Failed to load prompts:', error);
@@ -759,12 +1208,12 @@ async function loadSettings() {
         document.getElementById('grading-api-base').value = settings.grading_api_base || '';
         document.getElementById('analysis-api-key').value = settings.analysis_api_key || '';
         document.getElementById('analysis-api-base').value = settings.analysis_api_base || '';
-        document.getElementById('metadata-api-key').value = settings.metadata_api_key || '';
-        document.getElementById('metadata-api-base').value = settings.metadata_api_base || '';
+        document.getElementById('subject-analysis-api-key').value = settings.subject_analysis_api_key || '';
+        document.getElementById('subject-analysis-api-base').value = settings.subject_analysis_api_base || '';
         document.getElementById('model-vision').value = settings.model_vision || '';
         document.getElementById('model-grading').value = settings.model_grading || '';
         document.getElementById('model-analysis').value = settings.model_analysis || '';
-        document.getElementById('model-metadata').value = settings.model_metadata || '';
+        document.getElementById('model-subject-analysis').value = settings.model_subject_analysis || '';
     } catch (error) {
         console.error('Failed to load settings:', error);
     }
@@ -780,12 +1229,12 @@ async function saveSettings() {
         grading_api_base: document.getElementById('grading-api-base').value,
         analysis_api_key: document.getElementById('analysis-api-key').value,
         analysis_api_base: document.getElementById('analysis-api-base').value,
-        metadata_api_key: document.getElementById('metadata-api-key').value,
-        metadata_api_base: document.getElementById('metadata-api-base').value,
+        subject_analysis_api_key: document.getElementById('subject-analysis-api-key').value,
+        subject_analysis_api_base: document.getElementById('subject-analysis-api-base').value,
         model_vision: document.getElementById('model-vision').value,
         model_grading: document.getElementById('model-grading').value,
         model_analysis: document.getElementById('model-analysis').value,
-        model_metadata: document.getElementById('model-metadata').value
+        model_subject_analysis: document.getElementById('model-subject-analysis').value
     };
 
     try {
@@ -815,6 +1264,18 @@ async function resetSettings() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const examIdParam = urlParams.get('examId');
+    const pageParam = urlParams.get('page');
+    
+    if (examIdParam) {
+        currentExamId = parseInt(examIdParam);
+    }
+    
+    if (pageParam === 'correction' && currentExamId) {
+        loadCorrectionWorkspace();
+    }
+    
     document.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -837,13 +1298,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = document.getElementById('subject-name').value.trim();
         if (!name) return;
         
-        await apiRequest('/subjects', {
-            method: 'POST',
-            body: JSON.stringify({ name })
-        });
-        
-        hideModal('subject');
-        loadSubjects();
+        try {
+            await apiRequest('/subjects', {
+                method: 'POST',
+                body: JSON.stringify({ name })
+            });
+            
+            hideModal('subject');
+            loadSubjects();
+        } catch (error) {
+            console.error('创建学科失败:', error);
+            alert('创建学科失败: ' + error.message);
+        }
     });
     
     document.getElementById('cancel-subject-btn').addEventListener('click', () => hideModal('subject'));
@@ -864,17 +1330,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!name) return;
         
-        await apiRequest('/exams', {
-            method: 'POST',
-            body: JSON.stringify({
-                subject_id: currentSubjectId,
-                name,
-                date
-            })
-        });
-        
-        hideModal('exam');
-        loadExams(currentSubjectId);
+        try {
+            await apiRequest('/exams', {
+                method: 'POST',
+                body: JSON.stringify({
+                    subject_id: currentSubjectId,
+                    name,
+                    date
+                })
+            });
+            
+            hideModal('exam');
+            loadExams(currentSubjectId);
+        } catch (error) {
+            console.error('创建考试失败:', error);
+            alert('创建考试失败: ' + error.message);
+        }
     });
     
     document.getElementById('cancel-exam-btn').addEventListener('click', () => hideModal('exam'));
@@ -883,7 +1354,8 @@ document.addEventListener('DOMContentLoaded', () => {
         showPage('exams');
     });
     
-    document.getElementById('upload-btn').addEventListener('click', () => {
+    document.getElementById('upload-btn').addEventListener('click', async () => {
+        await loadUploadedImagesForExam();
         showModal('upload');
     });
     
@@ -918,18 +1390,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const filesArray = Array.from(files);
         let uploadedCount = 0;
         const totalFiles = filesArray.length;
-        
+
         document.getElementById('upload-area').style.display = 'none';
         document.getElementById('upload-progress').style.display = 'block';
-        
+
+        currentImageList = [];
+
         try {
             for (let i = 0; i < totalFiles; i++) {
                 const file = filesArray[i];
                 const formData = new FormData();
                 formData.append('file', file);
                 formData.append('exam_id', currentExamId);
-                formData.append('extract', 'false'); // 不上传时自动提取题目
-                
+                formData.append('extract', 'false');
+
                 console.log('上传文件:', file.name, '到', `${API_BASE}/upload`);
                 const response = await fetch(`${API_BASE}/upload`, {
                     method: 'POST',
@@ -938,35 +1412,34 @@ document.addEventListener('DOMContentLoaded', () => {
                         'Accept': 'application/json'
                     }
                 });
-                
+
                 console.log('上传响应状态:', response.status);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const result = await response.json();
                 console.log('上传响应结果:', result);
-                
-                // 只保存图片路径，不提取题目
+
                 if (result.image_path) {
-                    currentImage = result.image_path;
-                    // 创建一个默认题目
-                    const defaultQuestion = {
-                        id: result.questions ? result.questions[0].id : null,
-                        question_index: '1',
-                        ocr_text: '请点击"提取题目"按钮提取题目',
-                        image_path: result.image_path
-                    };
-                    currentQuestions = [defaultQuestion];
+                    currentImageList.push(result.image_path);
                 }
-                
+
                 uploadedCount++;
                 const progress = (uploadedCount / totalFiles) * 100;
                 document.querySelector('.progress-fill').style.width = `${progress}%`;
             }
-            
-            loadCorrectionWorkspace();
-            hideModal('upload');
+
+            if (currentImageList.length > 0) {
+                currentImageIndex = 0;
+                currentImage = currentImageList[currentImageIndex];
+
+                updateImageNav();
+
+                currentQuestions = [];
+                loadCorrectionWorkspace();
+                hideModal('upload');
+            }
         } catch (error) {
             console.error('上传失败:', error);
             alert('上传失败：' + error.message);
@@ -979,48 +1452,107 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 提取题目函数
     async function extractQuestions() {
-        if (!currentImage) {
+        if (currentImageList.length === 0) {
             alert('请先上传试卷图片');
             return;
         }
+
+        showSelectImagesModal();
+    }
+
+    let selectedImagesForExtraction = [];
+    
+    function showSelectImagesModal() {
+        const modal = document.getElementById('select-images-modal');
+        const list = document.getElementById('select-images-list');
+        
+        selectedImagesForExtraction = [...currentImageList];
+        
+        renderSelectImagesList();
+        showModal('select-images');
+    }
+    
+    function renderSelectImagesList() {
+        const list = document.getElementById('select-images-list');
+        
+        list.innerHTML = currentImageList.map((path, index) => {
+            const isSelected = selectedImagesForExtraction.includes(path);
+            return `
+                <div class="select-image-item ${isSelected ? 'selected' : ''}" data-path="${path}" data-index="${index}">
+                    <img src="${path}" alt="图片 ${index + 1}">
+                    ${isSelected ? '<div class="check-icon">✓</div>' : ''}
+                    <div class="image-number">图片 ${index + 1}</div>
+                </div>
+            `;
+        }).join('');
+        
+        list.querySelectorAll('.select-image-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const path = item.dataset.path;
+                
+                if (selectedImagesForExtraction.includes(path)) {
+                    selectedImagesForExtraction = selectedImagesForExtraction.filter(p => p !== path);
+                } else {
+                    selectedImagesForExtraction.push(path);
+                    selectedImagesForExtraction.sort((a, b) => {
+                        return currentImageList.indexOf(a) - currentImageList.indexOf(b);
+                    });
+                }
+                
+                renderSelectImagesList();
+            });
+        });
+    }
+    
+    async function confirmExtractImages() {
+        if (selectedImagesForExtraction.length === 0) {
+            alert('请至少选择一张图片');
+            return;
+        }
+        
+        hideModal('select-images');
         
         const btn = document.getElementById('extract-questions-btn');
         btn.disabled = true;
         btn.textContent = '提取中...';
-        
+
         try {
-            console.log('开始提取题目，图片路径:', currentImage);
-            
-            // 构建请求数据
+            console.log('开始提取题目，图片列表:', selectedImagesForExtraction);
+
             const formData = new FormData();
-            formData.append('image_path', currentImage);
             formData.append('exam_id', currentExamId);
             formData.append('extract', 'true');
-            
-            const response = await fetch(`${API_BASE}/extract-questions`, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            
-            console.log('提取题目响应状态:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+
+            for (let i = 0; i < selectedImagesForExtraction.length; i++) {
+                formData.append('image_paths', selectedImagesForExtraction[i]);
             }
+
+            const requestUrl = `${API_BASE}/extract-questions-batch`;
+            console.log('发送请求到:', requestUrl);
+
+            const response = await fetch(requestUrl, {
+                method: 'POST',
+                body: formData
+            });
+
+            console.log('提取题目响应状态:', response.status);
             
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('HTTP错误响应:', errorText);
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+
             const result = await response.json();
             console.log('提取题目响应结果:', result);
-            
+
             if (result.error) {
                 alert('分析失败：' + result.error);
                 return;
             }
-            
+
             if (result.questions && result.questions.length > 0) {
                 console.log('提取到的题目数量:', result.questions.length);
-                console.log('题目数据:', result.questions);
                 currentQuestions = result.questions;
                 renderQuestionsList();
                 alert('题目提取完成！共提取到 ' + result.questions.length + ' 道题目');
@@ -1029,6 +1561,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('提取题目失败:', error);
+            console.error('错误详情:', error.stack);
             alert('分析失败：' + error.message);
         } finally {
             btn.disabled = false;
@@ -1042,10 +1575,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('upload-progress').style.display = 'none';
     });
     
-    document.getElementById('action-upload').addEventListener('click', () => {
-        hideModal('exam-actions');
-        showModal('upload');
+    document.getElementById('cancel-select-images-btn').addEventListener('click', () => {
+        hideModal('select-images');
     });
+    
+    document.getElementById('confirm-select-images-btn').addEventListener('click', confirmExtractImages);
     
     document.getElementById('action-edit').addEventListener('click', () => {
         hideModal('exam-actions');
@@ -1069,7 +1603,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.getElementById('extract-questions-btn').addEventListener('click', extractQuestions);
-    
+
+    document.getElementById('prev-image-btn').addEventListener('click', () => {
+        if (currentImageIndex > 0) {
+            currentImageIndex--;
+            currentImage = currentImageList[currentImageIndex];
+            updateImageNav();
+            loadImageToCanvas(currentImage);
+            highlightQuestionForCurrentImage();
+        }
+    });
+
+    document.getElementById('next-image-btn').addEventListener('click', () => {
+        if (currentImageIndex < currentImageList.length - 1) {
+            currentImageIndex++;
+            currentImage = currentImageList[currentImageIndex];
+            updateImageNav();
+            loadImageToCanvas(currentImage);
+            highlightQuestionForCurrentImage();
+        }
+    });
+
     document.getElementById('add-question-btn').addEventListener('click', () => {
         showModal('add-question');
     });
@@ -1135,7 +1689,46 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.textContent = '开始批改';
         }
     });
-    
+
+    document.getElementById('generate-analysis-btn').addEventListener('click', async () => {
+        if (currentQuestions.length === 0) {
+            alert('请先上传试卷');
+            return;
+        }
+
+        const hasScores = currentQuestions.some(q => q.user_score !== null && q.user_score !== undefined);
+        if (!hasScores) {
+            alert('请先完成批改再生成分析报告');
+            return;
+        }
+
+        const btn = document.getElementById('generate-analysis-btn');
+        btn.disabled = true;
+        btn.textContent = '分析中...';
+
+        try {
+            const examId = currentExamId;
+            const response = await apiRequest(`/analyze-exam/${examId}`, {
+                method: 'POST'
+            });
+
+            alert('分析报告生成成功！\n\n' +
+                `考试名称: ${response.exam_name || '未命名'}\n` +
+                `总分: ${response.total_score}\n` +
+                `得分: ${response.total_earned_score}\n` +
+                `得分率: ${response.score_analysis?.score_rate || '0%'}\n\n` +
+                `查看详细报告请前往"分析仪表盘"页面`);
+
+            loadExam(examId);
+        } catch (error) {
+            console.error('生成分析报告失败:', error);
+            alert('生成分析报告失败: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📊 生成分析报告';
+        }
+    });
+
     document.getElementById('save-prompt-btn').addEventListener('click', savePrompt);
     document.getElementById('reset-prompt-btn').addEventListener('click', resetPrompt);
     

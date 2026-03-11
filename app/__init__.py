@@ -14,10 +14,10 @@ def create_app():
     from dotenv import load_dotenv
     load_dotenv()
     
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'gradeai-secret-key-2024')
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'prts-secret-key-2024')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
         'DATABASE_URI', 
-        'sqlite:///gradeai.db'
+        'sqlite:///prts.db'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'app/static/uploads')

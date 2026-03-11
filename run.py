@@ -32,7 +32,7 @@ def main():
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], f'服务启动: {url}')
         
         print(f"\n{'='*50}")
-        print(f"GradeAI 智能成绩分析系统")
+        print(f"PRTS 智能成绩分析系统")
         print(f"{'='*50}")
         print(f"服务启动中: {url}")
         print(f"按 Ctrl+C 停止服务")
