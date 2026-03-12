@@ -1,5 +1,22 @@
 const API_BASE = 'http://127.0.0.1:5000/api';
 
+function renderMarkdown(text) {
+    if (!text) return '';
+    try {
+        return marked.parse(text);
+    } catch (e) {
+        console.error('Markdown解析失败:', e);
+        return text;
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 let currentSubjectId = null;
 let currentExamId = null;
 let currentQuestions = [];
@@ -846,8 +863,8 @@ async function loadDashboardData(subjectId) {
             }
             
             const reportText = reportData.analysis_report || reportData.summary || subject.analysis_report || '暂无分析报告';
-            const processedText = reportText.replace(/\\n/g, '\n').replace(/\n/g, '<br>').replace(/\\t/g, '\t').replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
-            subjectAnalysisContent.innerHTML = `<div class="subject-report-text">${processedText}</div>`;
+            const reportHtml = renderMarkdown(reportText);
+            subjectAnalysisContent.innerHTML = `<div class="subject-report-text markdown-content">${reportHtml}</div>`;
             subjectAnalysisSection.style.display = 'block';
         } else {
             subjectAnalysisSection.style.display = 'none';
@@ -882,6 +899,8 @@ function renderExamAnalysis(exams) {
         
         const hasReport = reportData && (reportData.summary || reportData.exam_name);
         
+        const summaryHtml = hasReport ? renderMarkdown(reportData.summary || '暂无总结') : '';
+        
         html += `
             <div class="exam-report-card" data-exam-id="${exam.id}">
                 <div class="exam-report-header">
@@ -897,7 +916,7 @@ function renderExamAnalysis(exams) {
                         </div>
                         <div class="summary-text">
                             <h4>分析总结:</h4>
-                            <p>${(reportData.summary || '暂无总结').replace(/\\n/g, '\n').replace(/\n/g, '<br>')}</p>
+                            <div class="markdown-content">${summaryHtml}</div>
                         </div>
                         <div class="report-actions">
                             <button class="btn btn-sm btn-primary" onclick="editAnalysisReport(${exam.id})">编辑报告</button>
@@ -1299,6 +1318,10 @@ async function loadSettings() {
         document.getElementById('model-grading').value = settings.model_grading || '';
         document.getElementById('model-analysis').value = settings.model_analysis || '';
         document.getElementById('model-subject-analysis').value = settings.model_subject_analysis || '';
+        document.getElementById('vision-deep-thinking').checked = settings.vision_deep_thinking === 'true' || settings.vision_deep_thinking === true;
+        document.getElementById('grading-deep-thinking').checked = settings.grading_deep_thinking === 'true' || settings.grading_deep_thinking === true;
+        document.getElementById('analysis-deep-thinking').checked = settings.analysis_deep_thinking === 'true' || settings.analysis_deep_thinking === true;
+        document.getElementById('subject-analysis-deep-thinking').checked = settings.subject_analysis_deep_thinking === 'true' || settings.subject_analysis_deep_thinking === true;
     } catch (error) {
         console.error('Failed to load settings:', error);
     }
@@ -1320,7 +1343,11 @@ async function saveSettings() {
         model_vision: document.getElementById('model-vision').value,
         model_grading: document.getElementById('model-grading').value,
         model_analysis: document.getElementById('model-analysis').value,
-        model_subject_analysis: document.getElementById('model-subject-analysis').value
+        model_subject_analysis: document.getElementById('model-subject-analysis').value,
+        vision_deep_thinking: document.getElementById('vision-deep-thinking').checked ? 'true' : 'false',
+        grading_deep_thinking: document.getElementById('grading-deep-thinking').checked ? 'true' : 'false',
+        analysis_deep_thinking: document.getElementById('analysis-deep-thinking').checked ? 'true' : 'false',
+        subject_analysis_deep_thinking: document.getElementById('subject-analysis-deep-thinking').checked ? 'true' : 'false'
     };
 
     try {

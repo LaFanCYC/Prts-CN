@@ -807,6 +807,14 @@ def grade_all_questions(exam_id):
         question.standard_answer = result.get('standard_answer', '')
         question.user_score = result.get('user_score', 0)
         question.feedback = result.get('feedback', '')
+        
+        knowledge_tags = result.get('knowledge_tags', [])
+        if knowledge_tags:
+            if isinstance(knowledge_tags, list):
+                question.knowledge_tags = json.dumps(knowledge_tags)
+            else:
+                question.knowledge_tags = json.dumps([knowledge_tags])
+        
         results.append(question.to_dict())
 
     db.session.commit()
@@ -1011,6 +1019,10 @@ def get_settings():
         'analysis_api_base': os.getenv('AI_ANALYSIS_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
         'metadata_api_key': os.getenv('AI_METADATA_API_KEY', ''),
         'metadata_api_base': os.getenv('AI_METADATA_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'vision_deep_thinking': os.getenv('AI_VISION_DEEP_THINKING', 'false'),
+        'grading_deep_thinking': os.getenv('AI_GRADING_DEEP_THINKING', 'false'),
+        'analysis_deep_thinking': os.getenv('AI_ANALYSIS_DEEP_THINKING', 'false'),
+        'subject_analysis_deep_thinking': os.getenv('AI_SUBJECT_ANALYSIS_DEEP_THINKING', 'false'),
     }
 
     for key, default_value in default_settings.items():
@@ -1068,6 +1080,10 @@ def reset_settings():
         'analysis_api_base': os.getenv('AI_ANALYSIS_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
         'metadata_api_key': os.getenv('AI_METADATA_API_KEY', ''),
         'metadata_api_base': os.getenv('AI_METADATA_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'vision_deep_thinking': os.getenv('AI_VISION_DEEP_THINKING', 'false'),
+        'grading_deep_thinking': os.getenv('AI_GRADING_DEEP_THINKING', 'false'),
+        'analysis_deep_thinking': os.getenv('AI_ANALYSIS_DEEP_THINKING', 'false'),
+        'subject_analysis_deep_thinking': os.getenv('AI_SUBJECT_ANALYSIS_DEEP_THINKING', 'false'),
     }
 
     return jsonify(default_settings)
@@ -1108,7 +1124,7 @@ def test_api_connection():
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=10
+            max_tokens=100
         )
         
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'API连接测试成功', model=model)

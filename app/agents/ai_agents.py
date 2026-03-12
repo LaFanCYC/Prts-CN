@@ -98,14 +98,19 @@ class AIAgent:
                 "model": model,
                 "messages": messages,
                 "temperature": 0.3,
-                "max_tokens": 4000 if has_image else 2000,
+                "max_tokens": 40000 if has_image else 20000,
                 "stream": False
+                
             }
 
             if response_format:
                 params["response_format"] = response_format
             elif has_image and "gpt-4" in model:
                 params["response_format"] = {"type": "json_object"}
+
+            if hasattr(self, 'enable_deep_thinking') and self.enable_deep_thinking:
+                params["extra_body"] = {"enable_deep_thinking": True}
+                logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '启用深度思考模式', model=model)
 
             response = self.client.chat.completions.create(**params)
 
@@ -183,26 +188,37 @@ class AIAgent:
             api_key = settings.get('vision_api_key') or settings.get('api_key') or os.getenv('AI_VISION_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('vision_api_base') or settings.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+            deep_thinking_key = 'vision_deep_thinking'
         elif self.agent_type == 'grading':
             api_key = settings.get('grading_api_key') or settings.get('api_key') or os.getenv('AI_GRADING_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('grading_api_base') or settings.get('api_base') or os.getenv('AI_GRADING_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_grading') or os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
+            deep_thinking_key = 'grading_deep_thinking'
         elif self.agent_type == 'analysis':
             api_key = settings.get('analysis_api_key') or settings.get('api_key') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('analysis_api_base') or settings.get('api_base') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_analysis') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+            deep_thinking_key = 'analysis_deep_thinking'
         elif self.agent_type == 'metadata':
             api_key = settings.get('metadata_api_key') or settings.get('api_key') or os.getenv('AI_METADATA_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('metadata_api_base') or settings.get('api_base') or os.getenv('AI_METADATA_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_metadata') or os.getenv('AI_MODEL_METADATA', 'doubao-seed-2.0-mini')
+            deep_thinking_key = None
         elif self.agent_type == 'subject_analysis':
             api_key = settings.get('subject_analysis_api_key') or settings.get('analysis_api_key') or settings.get('api_key') or os.getenv('AI_SUBJECT_ANALYSIS_API_KEY') or os.getenv('AI_ANALYSIS_API_KEY') or os.getenv('AI_API_KEY')
             api_base = settings.get('subject_analysis_api_base') or settings.get('analysis_api_base') or settings.get('api_base') or os.getenv('AI_SUBJECT_ANALYSIS_API_BASE') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = settings.get('model_subject_analysis') or settings.get('model_analysis') or os.getenv('AI_MODEL_SUBJECT_ANALYSIS') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+            deep_thinking_key = 'subject_analysis_deep_thinking'
         else:
             api_key = settings.get('api_key') or os.getenv('AI_API_KEY')
             api_base = settings.get('api_base') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             model = None
+            deep_thinking_key = None
+
+        if deep_thinking_key:
+            self.enable_deep_thinking = settings.get(deep_thinking_key, 'false').lower() == 'true' or os.getenv(f'AI_{deep_thinking_key.upper()}', 'false').lower() == 'true'
+        else:
+            self.enable_deep_thinking = False
 
         if api_key and api_key.strip():
             self.client.api_key = api_key

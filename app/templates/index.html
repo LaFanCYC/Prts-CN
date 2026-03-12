@@ -178,6 +178,12 @@
                             <input type="text" id="model-vision" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                             <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('vision')" style="margin-top: 8px;">测试连接</button>
                         </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="vision-deep-thinking" style="width: auto; margin-right: 8px;">
+                                启用深度思考模式
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -196,6 +202,12 @@
                             <label>模型</label>
                             <input type="text" id="model-grading" class="form-input" placeholder="如：doubao-seed-2.0-mini">
                             <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('grading')" style="margin-top: 8px;">测试连接</button>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="grading-deep-thinking" style="width: auto; margin-right: 8px;">
+                                启用深度思考模式
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -216,6 +228,12 @@
                             <input type="text" id="model-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                             <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('analysis')" style="margin-top: 8px;">测试连接</button>
                         </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="analysis-deep-thinking" style="width: auto; margin-right: 8px;">
+                                启用深度思考模式
+                            </label>
+                        </div>
                     </div>
                 </div>
 
@@ -234,6 +252,12 @@
                             <label>模型</label>
                             <input type="text" id="model-subject-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
                             <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('subject-analysis')" style="margin-top: 8px;">测试连接</button>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="subject-analysis-deep-thinking" style="width: auto; margin-right: 8px;">
+                                启用深度思考模式
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -381,6 +405,7 @@
         </div>
     </div>
     
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
