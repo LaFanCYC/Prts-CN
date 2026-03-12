@@ -1,22 +1,5 @@
 const API_BASE = 'http://127.0.0.1:5000/api';
 
-function renderMarkdown(text) {
-    if (!text) return '';
-    try {
-        return marked.parse(text);
-    } catch (e) {
-        console.error('Markdown解析失败:', e);
-        return text;
-    }
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 let currentSubjectId = null;
 let currentExamId = null;
 let currentQuestions = [];
@@ -275,6 +258,7 @@ async function loadCorrectionWorkspace() {
         }
         
         renderQuestionsList();
+        updateImageNav();
         showPage('correction');
     } catch (error) {
         console.error('Failed to load correction workspace:', error);
@@ -482,7 +466,7 @@ function renderQuestionsList() {
                     <button class="btn-delete-question" data-index="${index}" title="删除题目">🗑️</button>
                 </div>
             </div>
-            <div class="question-text">${q.ocr_text || '未识别到题干'}</div>
+            <div class="question-text">${q.ocr_text ? marked.parse(q.ocr_text) : '未识别到题干'}</div>
 
             <div class="ocr-info">
                 ${q.student_answer ? `
@@ -853,18 +837,24 @@ async function loadDashboardData(subjectId) {
         const subjectAnalysisContent = document.getElementById('subject-analysis-content');
         
         if (subject.analysis_report) {
-            let reportData = null;
+            let reportText = '';
             try {
-                reportData = typeof subject.analysis_report === 'string' 
-                    ? JSON.parse(subject.analysis_report) 
-                    : subject.analysis_report;
+                if (typeof subject.analysis_report === 'string') {
+                    try {
+                        const parsed = JSON.parse(subject.analysis_report);
+                        reportText = parsed.analysis_report || parsed.summary || subject.analysis_report;
+                    } catch (e) {
+                        reportText = subject.analysis_report;
+                    }
+                } else {
+                    reportText = subject.analysis_report.analysis_report || subject.analysis_report.summary || JSON.stringify(subject.analysis_report);
+                }
             } catch (e) {
-                reportData = { analysis_report: subject.analysis_report };
+                reportText = subject.analysis_report || '暂无分析报告';
             }
             
-            const reportText = reportData.analysis_report || reportData.summary || subject.analysis_report || '暂无分析报告';
-            const reportHtml = renderMarkdown(reportText);
-            subjectAnalysisContent.innerHTML = `<div class="subject-report-text markdown-content">${reportHtml}</div>`;
+            const processedText = reportText.replace(/\\n/g, '\n');
+            subjectAnalysisContent.innerHTML = `<div class="subject-report-text">${marked.parse(processedText)}</div>`;
             subjectAnalysisSection.style.display = 'block';
         } else {
             subjectAnalysisSection.style.display = 'none';
@@ -887,19 +877,29 @@ function renderExamAnalysis(exams) {
     
     exams.forEach(exam => {
         let reportData = null;
+        let reportText = '';
         if (exam.analysis_report) {
             try {
-                reportData = typeof exam.analysis_report === 'string' 
-                    ? JSON.parse(exam.analysis_report) 
-                    : exam.analysis_report;
+                if (typeof exam.analysis_report === 'string') {
+                    try {
+                        const parsed = JSON.parse(exam.analysis_report);
+                        reportData = parsed;
+                        reportText = parsed.summary || parsed.analysis_report || exam.analysis_report;
+                    } catch (e) {
+                        reportText = exam.analysis_report;
+                        reportData = { summary: exam.analysis_report };
+                    }
+                } else {
+                    reportData = exam.analysis_report;
+                    reportText = exam.analysis_report.summary || exam.analysis_report.analysis_report || JSON.stringify(exam.analysis_report);
+                }
             } catch (e) {
+                reportText = exam.analysis_report;
                 reportData = { summary: exam.analysis_report };
             }
         }
         
         const hasReport = reportData && (reportData.summary || reportData.exam_name);
-        
-        const summaryHtml = hasReport ? renderMarkdown(reportData.summary || '暂无总结') : '';
         
         html += `
             <div class="exam-report-card" data-exam-id="${exam.id}">
@@ -916,7 +916,7 @@ function renderExamAnalysis(exams) {
                         </div>
                         <div class="summary-text">
                             <h4>分析总结:</h4>
-                            <div class="markdown-content">${summaryHtml}</div>
+                            <div>${marked.parse((reportText || '暂无总结').replace(/\\n/g, '\n'))}</div>
                         </div>
                         <div class="report-actions">
                             <button class="btn btn-sm btn-primary" onclick="editAnalysisReport(${exam.id})">编辑报告</button>
@@ -1034,13 +1034,25 @@ async function editAnalysisReport(examId) {
     try {
         const exam = await apiRequest(`/exams/${examId}`);
         let reportData = null;
+        let summaryText = '';
         
         if (exam.analysis_report) {
             try {
-                reportData = typeof exam.analysis_report === 'string' 
-                    ? JSON.parse(exam.analysis_report) 
-                    : exam.analysis_report;
+                if (typeof exam.analysis_report === 'string') {
+                    try {
+                        const parsed = JSON.parse(exam.analysis_report);
+                        reportData = parsed;
+                        summaryText = parsed.summary || parsed.analysis_report || '';
+                    } catch (e) {
+                        summaryText = exam.analysis_report;
+                        reportData = { summary: exam.analysis_report };
+                    }
+                } else {
+                    reportData = exam.analysis_report;
+                    summaryText = exam.analysis_report.summary || exam.analysis_report.analysis_report || '';
+                }
             } catch (e) {
+                summaryText = exam.analysis_report;
                 reportData = { summary: exam.analysis_report };
             }
         }
@@ -1060,7 +1072,7 @@ async function editAnalysisReport(examId) {
             </div>
             <div class="form-group">
                 <label>分析总结</label>
-                <textarea id="edit-summary" class="form-textarea" rows="8">${reportData?.summary || ''}</textarea>
+                <textarea id="edit-summary" class="form-textarea" rows="8">${summaryText.replace(/\\n/g, '\n')}</textarea>
             </div>
         `;
         

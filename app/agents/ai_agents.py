@@ -41,6 +41,7 @@ class AIAgent:
         self.grading_model = 'doubao-seed-2.0-mini'
         self.analysis_model = 'doubao-seed-2.0-pro'
         self.metadata_model = 'doubao-seed-2.0-mini'
+        self.subject_analysis_model = 'doubao-seed-2.0-pro'
 
         self.json_processor = JSONProcessor()
 
@@ -98,7 +99,7 @@ class AIAgent:
                 "model": model,
                 "messages": messages,
                 "temperature": 0.3,
-                "max_tokens": 40000 if has_image else 20000,
+                "max_tokens": 8192,
                 "stream": False
                 
             }
@@ -237,6 +238,7 @@ class AIAgent:
                 self.metadata_model = model
             elif self.agent_type == 'subject_analysis':
                 self.analysis_model = model
+                self.subject_analysis_model = model
 
         logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '设置加载完成',
                   agent_type=self.agent_type,
@@ -254,7 +256,7 @@ class AIAgent:
         elif self.agent_type == 'metadata':
             return self.metadata_model
         elif self.agent_type == 'subject_analysis':
-            return self.analysis_model
+            return getattr(self, 'subject_analysis_model', self.analysis_model)
         return None
 
     def encode_image(self, image_path):
@@ -584,7 +586,7 @@ class GradingAgent(AIAgent):
                 "score": str(question_data.get('score', question_data.get('max_score', 10))),
                 "reference_answer": "",
                 "analysis": "",
-                "knowledge_point": ""
+                "knowledge_tags": []
             }, ensure_ascii=False)
 
             logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], 'GradingAgent 发送题目数据',

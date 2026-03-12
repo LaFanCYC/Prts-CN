@@ -615,77 +615,71 @@ body {
     font-size: 14px;
 }
 
-.markdown-content {
-    line-height: 1.8;
-}
-
-.markdown-content h1, .markdown-content h2, .markdown-content h3, 
-.markdown-content h4, .markdown-content h5, .markdown-content h6 {
-    margin-top: 16px;
-    margin-bottom: 8px;
+.subject-report-text h1,
+.subject-report-text h2,
+.subject-report-text h3,
+.subject-report-text h4,
+.subject-report-text h5,
+.subject-report-text h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
     font-weight: 600;
 }
 
-.markdown-content h1 { font-size: 24px; }
-.markdown-content h2 { font-size: 20px; }
-.markdown-content h3 { font-size: 18px; }
-.markdown-content h4 { font-size: 16px; }
+.subject-report-text h1 { font-size: 1.5em; }
+.subject-report-text h2 { font-size: 1.3em; }
+.subject-report-text h3 { font-size: 1.15em; }
 
-.markdown-content p {
-    margin-bottom: 12px;
+.subject-report-text p {
+    margin-bottom: 0.8em;
 }
 
-.markdown-content ul, .markdown-content ol {
-    margin-left: 20px;
-    margin-bottom: 12px;
+.subject-report-text ul,
+.subject-report-text ol {
+    margin-bottom: 0.8em;
+    padding-left: 1.5em;
 }
 
-.markdown-content li {
-    margin-bottom: 4px;
+.subject-report-text li {
+    margin-bottom: 0.3em;
 }
 
-.markdown-content code {
-    background: rgba(0,0,0,0.1);
+.subject-report-text code {
+    background: rgba(0,0,0,0.15);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 3px;
     font-family: monospace;
-    font-size: 13px;
+    font-size: 0.9em;
 }
 
-.markdown-content pre {
-    background: rgba(0,0,0,0.1);
+.subject-report-text pre {
+    background: rgba(0,0,0,0.15);
     padding: 12px;
     border-radius: 6px;
     overflow-x: auto;
-    margin-bottom: 12px;
+    margin-bottom: 0.8em;
 }
 
-.markdown-content pre code {
+.subject-report-text pre code {
     background: none;
     padding: 0;
 }
 
-.markdown-content table {
-    border-collapse: collapse;
+.subject-report-text table {
     width: 100%;
-    margin-bottom: 12px;
+    border-collapse: collapse;
+    margin-bottom: 0.8em;
 }
 
-.markdown-content th, .markdown-content td {
-    border: 1px solid #ddd;
+.subject-report-text th,
+.subject-report-text td {
+    border: 1px solid var(--border-color);
     padding: 8px;
     text-align: left;
 }
 
-.markdown-content th {
-    background: rgba(0,0,0,0.05);
-}
-
-.markdown-content blockquote {
-    border-left: 4px solid #ddd;
-    margin-left: 0;
-    padding-left: 16px;
-    color: #666;
+.subject-report-text th {
+    background: rgba(0,0,0,0.1);
 }
 
 .exam-analysis {

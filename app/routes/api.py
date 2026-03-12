@@ -347,6 +347,7 @@ def upload_image():
             api_base = settings_dict.get('vision_api_base') or settings_dict.get('api_base') or os.getenv('AI_VISION_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             api_base = normalize_api_base(api_base)
             model = settings_dict.get('model_vision') or os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro')
+            enable_deep_thinking = settings_dict.get('vision_deep_thinking', 'false').lower() == 'true' or os.getenv('AI_VISION_DEEP_THINKING', 'false').lower() == 'true'
 
             if api_key and api_key.strip():
                 vision_agent.client.api_key = api_key
@@ -354,9 +355,10 @@ def upload_image():
                 vision_agent.client.base_url = api_base
             if model and model.strip():
                 vision_agent.vision_model = model
+            vision_agent.enable_deep_thinking = enable_deep_thinking
 
             logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'VisionAgent 使用设置',
-                      api_key_set=bool(api_key), api_base=api_base, model=model)
+                      api_key_set=bool(api_key), api_base=api_base, model=model, enable_deep_thinking=enable_deep_thinking)
 
             logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '获取视觉模型Prompt', prompt=custom_prompt[:200] if custom_prompt else 'None')
             vision_result = vision_agent.analyze(filepath, custom_prompt)
@@ -370,7 +372,7 @@ def upload_image():
                         student_answer=item.get('student_answer', ''),
                         analysis=item.get('analysis', ''),
                         standard_answer=item.get('reference_answer', ''),
-                        knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                        knowledge_tags=json.dumps(item.get('knowledge_tags', [])) if item.get('knowledge_tags') else (json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]'),
                         max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
                         coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                         image_path=relative_path
@@ -553,7 +555,7 @@ def extract_questions():
                     student_answer=item.get('student_answer', ''),
                     analysis=item.get('analysis', ''),
                     standard_answer=item.get('reference_answer', ''),
-                    knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                    knowledge_tags=json.dumps(item.get('knowledge_tags', [])) if item.get('knowledge_tags') else (json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]'),
                     max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
                     coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                     image_path=request.form.get('image_path')
@@ -670,7 +672,7 @@ def extract_questions_batch():
                         student_answer=item.get('student_answer', ''),
                         analysis=item.get('analysis', ''),
                         standard_answer=item.get('reference_answer', ''),
-                        knowledge_tags=json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]',
+                        knowledge_tags=json.dumps(item.get('knowledge_tags', [])) if item.get('knowledge_tags') else (json.dumps([item.get('knowledge_point', '')]) if item.get('knowledge_point') else '[]'),
                         max_score=float(item.get('score', 10)) if item.get('score') else 10.0,
                         coordinates=json.dumps(item.get('bbox', []) if item.get('bbox') else item.get('bbox', [])),
                         image_path=image_path
@@ -752,6 +754,7 @@ def grade_all_questions(exam_id):
             api_base = settings_dict.get('grading_api_base') or settings_dict.get('api_base') or os.getenv('AI_GRADING_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
             api_base = normalize_api_base(api_base)
             model = settings_dict.get('model_grading') or os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini')
+            enable_deep_thinking = settings_dict.get('grading_deep_thinking', 'false').lower() == 'true' or os.getenv('AI_GRADING_DEEP_THINKING', 'false').lower() == 'true'
 
             if api_key and api_key.strip():
                 agent.client.api_key = api_key
@@ -759,11 +762,13 @@ def grade_all_questions(exam_id):
                 agent.client.base_url = api_base
             if model and model.strip():
                 agent.grading_model = model
+            agent.enable_deep_thinking = enable_deep_thinking
 
             logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '使用设置进行评分',
                       api_key_set=bool(api_key),
                       api_base=api_base,
-                      model=model)
+                      model=model,
+                      enable_deep_thinking=enable_deep_thinking)
 
             question_data = {
                 'question_index': question.question_index,
@@ -857,6 +862,7 @@ def analyze_exam(exam_id):
     api_base = settings_dict.get('analysis_api_base') or settings_dict.get('api_base') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
     api_base = normalize_api_base(api_base)
     model = settings_dict.get('model_analysis') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+    enable_deep_thinking = settings_dict.get('analysis_deep_thinking', 'false').lower() == 'true' or os.getenv('AI_ANALYSIS_DEEP_THINKING', 'false').lower() == 'true'
 
     if api_key and api_key.strip():
         analysis_agent.client.api_key = api_key
@@ -864,9 +870,10 @@ def analyze_exam(exam_id):
         analysis_agent.client.base_url = api_base
     if model and model.strip():
         analysis_agent.analysis_model = model
+    analysis_agent.enable_deep_thinking = enable_deep_thinking
 
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'AnalysisAgent 使用设置',
-              api_key_set=bool(api_key), api_base=api_base, model=model)
+              api_key_set=bool(api_key), api_base=api_base, model=model, enable_deep_thinking=enable_deep_thinking)
 
     logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '分析请求 - 发送数据',
               exam_name=exam.name,
@@ -911,16 +918,18 @@ def analyze_subject(subject_id):
     api_base = settings_dict.get('subject_analysis_api_base') or settings_dict.get('analysis_api_base') or settings_dict.get('api_base') or os.getenv('AI_SUBJECT_ANALYSIS_API_BASE') or os.getenv('AI_ANALYSIS_API_BASE') or os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3')
     api_base = normalize_api_base(api_base)
     model = settings_dict.get('model_subject_analysis') or settings_dict.get('model_analysis') or os.getenv('AI_MODEL_SUBJECT_ANALYSIS') or os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro')
+    enable_deep_thinking = settings_dict.get('subject_analysis_deep_thinking', 'false').lower() == 'true' or os.getenv('AI_SUBJECT_ANALYSIS_DEEP_THINKING', 'false').lower() == 'true'
 
     if api_key and api_key.strip():
         subject_analysis_agent.client.api_key = api_key
     if api_base and api_base.strip():
         subject_analysis_agent.client.base_url = api_base
     if model and model.strip():
-        subject_analysis_agent.analysis_model = model
+        subject_analysis_agent.subject_analysis_model = model
+    subject_analysis_agent.enable_deep_thinking = enable_deep_thinking
 
     logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'SubjectAnalysisAgent 使用设置',
-              api_key_set=bool(api_key), api_base=api_base, model=model)
+              api_key_set=bool(api_key), api_base=api_base, model=model, enable_deep_thinking=enable_deep_thinking)
 
     logger.log(LOG_CATEGORIES['NETWORK_REQUEST'], '学科分析请求 - 发送数据',
               subject_name=subject.name,
@@ -932,9 +941,14 @@ def analyze_subject(subject_id):
     logger.log(LOG_CATEGORIES['NETWORK_RESPONSE'], '学科分析请求 - 返回结果',
               result=str(result)[:500])
 
-    analysis_report_content = result.get('analysis_report', '')
+    if isinstance(result, dict):
+        analysis_report_content = result.get('analysis_report', '') or result.get('summary', '')
+    else:
+        analysis_report_content = str(result) if result else ''
+    
     if isinstance(analysis_report_content, dict):
         analysis_report_content = json.dumps(analysis_report_content, ensure_ascii=False)
+    
     subject.analysis_report = analysis_report_content
     db.session.commit()
 
