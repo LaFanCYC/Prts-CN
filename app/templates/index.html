@@ -154,6 +154,11 @@
                             <label>通用 API 基础 URL</label>
                             <input type="url" id="api-base" class="form-input" placeholder="如：https://ark.cn-beijing.volces.com/api/v3">
                         </div>
+                        <div class="form-group">
+                            <label>模型（用于测试连接）</label>
+                            <input type="text" id="model-general" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                            <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('general')" style="margin-top: 8px;">测试连接</button>
+                        </div>
                     </div>
                 </div>
 
@@ -171,6 +176,7 @@
                         <div class="form-group">
                             <label>模型</label>
                             <input type="text" id="model-vision" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                            <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('vision')" style="margin-top: 8px;">测试连接</button>
                         </div>
                     </div>
                 </div>
@@ -189,6 +195,7 @@
                         <div class="form-group">
                             <label>模型</label>
                             <input type="text" id="model-grading" class="form-input" placeholder="如：doubao-seed-2.0-mini">
+                            <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('grading')" style="margin-top: 8px;">测试连接</button>
                         </div>
                     </div>
                 </div>
@@ -207,6 +214,7 @@
                         <div class="form-group">
                             <label>模型</label>
                             <input type="text" id="model-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                            <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('analysis')" style="margin-top: 8px;">测试连接</button>
                         </div>
                     </div>
                 </div>
@@ -225,6 +233,7 @@
                         <div class="form-group">
                             <label>模型</label>
                             <input type="text" id="model-subject-analysis" class="form-input" placeholder="如：doubao-seed-2.0-pro">
+                            <button type="button" class="btn btn-sm btn-info" onclick="testApiConnection('subject-analysis')" style="margin-top: 8px;">测试连接</button>
                         </div>
                     </div>
                 </div>

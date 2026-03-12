@@ -998,6 +998,7 @@ def get_settings():
     default_settings = {
         'api_key': os.getenv('AI_API_KEY', ''),
         'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'model_general': os.getenv('AI_MODEL_GENERAL', 'doubao-seed-2.0-pro'),
         'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
         'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
         'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro'),
@@ -1054,6 +1055,7 @@ def reset_settings():
     default_settings = {
         'api_key': os.getenv('AI_API_KEY', ''),
         'api_base': os.getenv('AI_API_BASE', 'https://ark.cn-beijing.volces.com/api/v3'),
+        'model_general': os.getenv('AI_MODEL_GENERAL', 'doubao-seed-2.0-pro'),
         'model_vision': os.getenv('AI_MODEL_VISION', 'doubao-seed-2.0-pro'),
         'model_grading': os.getenv('AI_MODEL_GRADING', 'doubao-seed-2.0-mini'),
         'model_analysis': os.getenv('AI_MODEL_ANALYSIS', 'doubao-seed-2.0-pro'),
@@ -1069,6 +1071,57 @@ def reset_settings():
     }
 
     return jsonify(default_settings)
+
+
+@api.route('/settings/test', methods=['POST'])
+def test_api_connection():
+    from openai import OpenAI
+    import requests
+    
+    data = request.get_json()
+    api_key = data.get('api_key', '')
+    api_base = data.get('api_base', '')
+    model = data.get('model', '')
+    
+    if not api_key:
+        return jsonify({'success': False, 'message': 'API密钥不能为空'})
+    
+    if not api_base:
+        return jsonify({'success': False, 'message': 'API地址不能为空'})
+    
+    if not model:
+        return jsonify({'success': False, 'message': '模型名称不能为空'})
+    
+    logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], '测试API连接', api_base=api_base, model=model)
+    
+    try:
+        normalized_base = api_base.rstrip('/')
+        if '/v3' not in normalized_base and '/v1' not in normalized_base:
+            normalized_base = f"{normalized_base}/v3"
+        
+        client = OpenAI(
+            api_key=api_key,
+            base_url=normalized_base,
+            timeout=30.0
+        )
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=10
+        )
+        
+        logger.log(LOG_CATEGORIES['SYSTEM_STATUS'], 'API连接测试成功', model=model)
+        return jsonify({
+            'success': True, 
+            'message': f'连接成功！模型: {model}',
+            'response': response.choices[0].message.content if response.choices else ''
+        })
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.log(LOG_CATEGORIES['ERROR'], 'API连接测试失败', error=error_msg)
+        return jsonify({'success': False, 'message': f'连接失败: {error_msg}'})
 
 
 @api.route('/dashboard/<int:subject_id>', methods=['GET'])

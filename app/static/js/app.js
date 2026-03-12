@@ -9,6 +9,9 @@ let currentImageIndex = 0;
 let imageScale = 1;
 let selectedQuestionIndex = null;
 
+let processingExams = {};
+let processingSubjects = {};
+
 async function apiRequest(endpoint, options = {}) {
     const url = `${API_BASE}${endpoint}`;
     console.log('API请求:', url, options);
@@ -46,6 +49,43 @@ function showPage(pageId) {
     document.querySelector(`[data-page="${pageId}"]`)?.classList.add('active');
 }
 
+function getExamStatusText(examId) {
+    const status = processingExams[examId];
+    if (!status) return '';
+    
+    const parts = [];
+    if (status.extracting) parts.push('提取中');
+    if (status.grading) parts.push('批改中');
+    if (status.analyzing) parts.push('分析中');
+    
+    return parts.join(' / ');
+}
+
+function updateExamCardStatus(examId) {
+    const cards = document.querySelectorAll(`.exam-card[data-id="${examId}"]`);
+    cards.forEach(card => {
+        const statusEl = card.querySelector('.exam-status');
+        const statusText = getExamStatusText(examId);
+        
+        if (statusText) {
+            if (statusEl) {
+                statusEl.textContent = statusText;
+            } else {
+                const dateEl = card.querySelector('.exam-date');
+                if (dateEl) {
+                    const newStatus = document.createElement('p');
+                    newStatus.className = 'exam-status';
+                    newStatus.style.cssText = 'color: #f59e0b; font-size: 12px;';
+                    newStatus.textContent = statusText;
+                    dateEl.parentNode.insertBefore(newStatus, dateEl.nextSibling);
+                }
+            }
+        } else if (statusEl) {
+            statusEl.remove();
+        }
+    });
+}
+
 function showModal(modalId) {
     document.getElementById(modalId + '-modal').classList.add('active');
 }
@@ -69,17 +109,19 @@ async function loadSubjects() {
             return;
         }
         
-        grid.innerHTML = subjects.map(s => `
+        grid.innerHTML = subjects.map(s => {
+            const isAnalyzing = processingSubjects[s.id];
+            return `
             <div class="subject-card" data-id="${s.id}">
                 <h3>${s.name}</h3>
                 <p class="exam-count">${s.exam_count || 0} 场考试</p>
                 <div class="card-actions">
                     <button class="btn btn-secondary btn-view-exams" data-id="${s.id}">查看考试</button>
-                    <button class="btn btn-secondary btn-analyze-subject" data-id="${s.id}">生成学科分析</button>
+                    <button class="btn btn-secondary btn-analyze-subject" data-id="${s.id}" ${isAnalyzing ? 'disabled' : ''}>${isAnalyzing ? '分析中...' : '生成学科分析'}</button>
                     <button class="btn btn-secondary btn-delete-subject" data-id="${s.id}">删除</button>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
         
         grid.querySelectorAll('.btn-view-exams').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -133,19 +175,22 @@ async function loadExams(subjectId) {
                 </div>
             `;
         } else {
-            grid.innerHTML = exams.map(e => `
+            grid.innerHTML = exams.map(e => {
+                const status = getExamStatusText(e.id);
+                return `
                 <div class="exam-card" data-id="${e.id}">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <h3>${e.name}</h3>
                         <button class="btn btn-icon btn-delete-exam" data-id="${e.id}" style="background: #dc2626; color: white; padding: 4px 8px;">×</button>
                     </div>
                     <p class="exam-date">${e.date || '未设置日期'}</p>
+                    ${status ? `<p class="exam-status" style="color: #f59e0b; font-size: 12px;">${status}</p>` : ''}
                     <div class="exam-stats">
                         <span>${e.question_count || 0} 题</span>
                         <span class="score">${e.user_score || 0} / ${e.total_score || 0} 分</span>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
             
             grid.querySelectorAll('.exam-card').forEach(card => {
                 card.addEventListener('click', (e) => {
@@ -875,11 +920,19 @@ function renderExamAnalysis(exams) {
 async function generateAnalysisForExam(examId, event) {
     if (!confirm('确定要生成分析报告吗？请确保已完成所有题目的批改。')) return;
     
+    if (processingExams[examId]?.analyzing) {
+        alert('当前考试正在分析中，请稍候再试');
+        return;
+    }
+    
     const btn = event?.target;
     if (btn) {
         btn.disabled = true;
         btn.textContent = '生成中...';
     }
+    
+    processingExams[examId] = { ...processingExams[examId], analyzing: true };
+    updateExamCardStatus(examId);
     
     try {
         const response = await apiRequest(`/analyze-exam/${examId}`, {
@@ -901,17 +954,29 @@ async function generateAnalysisForExam(examId, event) {
             btn.disabled = false;
             btn.textContent = '生成分析报告';
         }
+        if (processingExams[examId]) {
+            processingExams[examId].analyzing = false;
+        }
+        updateExamCardStatus(examId);
     }
 }
 
 async function generateAnalysisForSubject(subjectId) {
     if (!confirm('确定要生成学科分析报告吗？请确保该学科下已有考试数据。')) return;
     
+    if (processingSubjects[subjectId]) {
+        alert('该学科正在分析中，请稍候再试');
+        return;
+    }
+    
     const subject = await apiRequest(`/subjects/${subjectId}`);
     if (!subject.exam_count || subject.exam_count === 0) {
         alert('该学科下没有考试数据，无法生成分析报告。');
         return;
     }
+    
+    processingSubjects[subjectId] = true;
+    updateSubjectCardStatus(subjectId);
     
     try {
         await apiRequest(`/analyze-subject/${subjectId}`, {
@@ -924,7 +989,26 @@ async function generateAnalysisForSubject(subjectId) {
     } catch (error) {
         console.error('生成学科分析报告失败:', error);
         alert('生成学科分析报告失败: ' + error.message);
+    } finally {
+        processingSubjects[subjectId] = false;
+        updateSubjectCardStatus(subjectId);
     }
+}
+
+function updateSubjectCardStatus(subjectId) {
+    const cards = document.querySelectorAll(`.subject-card[data-id="${subjectId}"]`);
+    cards.forEach(card => {
+        const analyzeBtn = card.querySelector('.btn-analyze-subject');
+        if (analyzeBtn) {
+            if (processingSubjects[subjectId]) {
+                analyzeBtn.disabled = true;
+                analyzeBtn.textContent = '分析中...';
+            } else {
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = '生成学科分析';
+            }
+        }
+    });
 }
 
 async function editAnalysisReport(examId) {
@@ -1210,6 +1294,7 @@ async function loadSettings() {
         document.getElementById('analysis-api-base').value = settings.analysis_api_base || '';
         document.getElementById('subject-analysis-api-key').value = settings.subject_analysis_api_key || '';
         document.getElementById('subject-analysis-api-base').value = settings.subject_analysis_api_base || '';
+        document.getElementById('model-general').value = settings.model_general || '';
         document.getElementById('model-vision').value = settings.model_vision || '';
         document.getElementById('model-grading').value = settings.model_grading || '';
         document.getElementById('model-analysis').value = settings.model_analysis || '';
@@ -1231,6 +1316,7 @@ async function saveSettings() {
         analysis_api_base: document.getElementById('analysis-api-base').value,
         subject_analysis_api_key: document.getElementById('subject-analysis-api-key').value,
         subject_analysis_api_base: document.getElementById('subject-analysis-api-base').value,
+        model_general: document.getElementById('model-general').value,
         model_vision: document.getElementById('model-vision').value,
         model_grading: document.getElementById('model-grading').value,
         model_analysis: document.getElementById('model-analysis').value,
@@ -1260,6 +1346,79 @@ async function resetSettings() {
         alert('已重置为默认设置');
     } catch (error) {
         console.error('Failed to reset settings:', error);
+    }
+}
+
+async function testApiConnection(type) {
+    const configMap = {
+        'general': {
+            apiKey: 'api-key',
+            apiBase: 'api-base',
+            model: 'model-general'
+        },
+        'vision': {
+            apiKey: 'vision-api-key',
+            apiBase: 'vision-api-base',
+            model: 'model-vision'
+        },
+        'grading': {
+            apiKey: 'grading-api-key',
+            apiBase: 'grading-api-base',
+            model: 'model-grading'
+        },
+        'analysis': {
+            apiKey: 'analysis-api-key',
+            apiBase: 'analysis-api-base',
+            model: 'model-analysis'
+        },
+        'subject-analysis': {
+            apiKey: 'subject-analysis-api-key',
+            apiBase: 'subject-analysis-api-base',
+            model: 'model-subject-analysis'
+        }
+    };
+    
+    const config = configMap[type];
+    if (!config) {
+        alert('未知的配置类型');
+        return;
+    }
+    
+    const apiKey = document.getElementById(config.apiKey).value;
+    const apiBase = document.getElementById(config.apiBase).value;
+    const model = document.getElementById(config.model).value;
+    
+    if (!apiKey || !apiBase || !model) {
+        alert('请填写完整的API密钥、API地址和模型名称');
+        return;
+    }
+    
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    
+    try {
+        const response = await apiRequest('/settings/test', {
+            method: 'POST',
+            body: JSON.stringify({
+                api_key: apiKey,
+                api_base: apiBase,
+                model: model
+            })
+        });
+        
+        if (response.success) {
+            alert('✓ ' + response.message);
+        } else {
+            alert('✗ ' + response.message);
+        }
+    } catch (error) {
+        console.error('测试连接失败:', error);
+        alert('✗ 测试失败: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
 
@@ -1510,11 +1669,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        if (processingExams[currentExamId]?.extracting) {
+            alert('当前考试正在提取题目中，请稍候再试');
+            return;
+        }
+        
         hideModal('select-images');
         
         const btn = document.getElementById('extract-questions-btn');
         btn.disabled = true;
         btn.textContent = '提取中...';
+        
+        processingExams[currentExamId] = { ...processingExams[currentExamId], extracting: true };
+        updateExamCardStatus(currentExamId);
 
         try {
             console.log('开始提取题目，图片列表:', selectedImagesForExtraction);
@@ -1566,6 +1733,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             btn.disabled = false;
             btn.textContent = '提取题目';
+            if (processingExams[currentExamId]) {
+                processingExams[currentExamId].extracting = false;
+            }
+            updateExamCardStatus(currentExamId);
         }
     }
     
@@ -1666,9 +1837,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        if (processingExams[currentExamId]?.grading) {
+            alert('当前考试正在批改中，请稍候再试');
+            return;
+        }
+        
         const btn = document.getElementById('start-grading-btn');
         btn.disabled = true;
         btn.textContent = '批改中...';
+        
+        processingExams[currentExamId] = { ...processingExams[currentExamId], grading: true };
+        updateExamCardStatus(currentExamId);
         
         try {
             console.log('开始批改，请求URL:', `${API_BASE}/grade-all/${currentExamId}`);
@@ -1687,6 +1866,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             btn.disabled = false;
             btn.textContent = '开始批改';
+            if (processingExams[currentExamId]) {
+                processingExams[currentExamId].grading = false;
+            }
+            updateExamCardStatus(currentExamId);
         }
     });
 

@@ -1147,6 +1147,26 @@ body {
     font-size: 13px;
 }
 
+.btn-info {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.btn-info:hover {
+    background: #2563eb;
+}
+
+.btn-info:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+
 .btn-block {
     width: 100%;
     justify-content: center;
