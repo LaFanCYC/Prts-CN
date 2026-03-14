@@ -404,6 +404,12 @@ body {
     opacity: 1;
 }
 
+.btn-delete-question.disabled,
+.btn-delete-question:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
 .question-item .question-text {
     font-size: 14px;
     color: var(--text-secondary);

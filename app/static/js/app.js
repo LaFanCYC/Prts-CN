@@ -11,6 +11,8 @@ let selectedQuestionIndex = null;
 
 let processingExams = {};
 let processingSubjects = {};
+let cancelGradingRequest = false;
+let cancelExtractRequest = false;
 
 async function apiRequest(endpoint, options = {}) {
     const url = `${API_BASE}${endpoint}`;
@@ -195,7 +197,17 @@ async function loadExams(subjectId) {
             grid.querySelectorAll('.exam-card').forEach(card => {
                 card.addEventListener('click', (e) => {
                     if (!e.target.classList.contains('btn-delete-exam')) {
-                        currentExamId = parseInt(card.dataset.id);
+                        const newExamId = parseInt(card.dataset.id);
+                        
+                        if (currentExamId !== newExamId) {
+                            currentQuestions = [];
+                            currentImage = null;
+                            currentImageList = [];
+                            currentImageIndex = 0;
+                            selectedImagesForExtraction = [];
+                        }
+                        
+                        currentExamId = newExamId;
                         showUploadModalForExam();
                     }
                 });
@@ -207,15 +219,20 @@ async function loadExams(subjectId) {
                     const examId = parseInt(btn.dataset.id);
                     
                     if (confirm('确定要删除这个考试吗？')) {
-                        await apiRequest(`/exams/${examId}`, { method: 'DELETE' });
+                        const wasCurrentExam = currentExamId === examId;
                         
-                        if (currentExamId === examId) {
+                        if (wasCurrentExam) {
                             currentExamId = null;
                             currentQuestions = [];
                             currentImage = null;
+                            currentImageList = [];
+                            currentImageIndex = 0;
+                            selectedImagesForExtraction = [];
                             showPage('exams');
                         }
                         
+                        delete processingExams[examId];
+                        await apiRequest(`/exams/${examId}`, { method: 'DELETE' });
                         loadExams(currentSubjectId);
                     }
                 });
@@ -259,6 +276,7 @@ async function loadCorrectionWorkspace() {
         
         renderQuestionsList();
         updateImageNav();
+        updateExtractButtonState();
         showPage('correction');
     } catch (error) {
         console.error('Failed to load correction workspace:', error);
@@ -350,7 +368,60 @@ function showExamActionsModal() {
 }
 
 function showUploadModalForExam() {
+    updateExtractButtonState();
     showExamActionsModal();
+}
+
+function updateExtractButtonState() {
+    const examId = currentExamId;
+    const extractBtn = document.getElementById('extract-questions-btn');
+    const cancelExtractBtn = document.getElementById('cancel-extract-btn');
+    const gradeBtn = document.getElementById('start-grading-btn');
+    const cancelGradingBtn = document.getElementById('cancel-grading-btn');
+    
+    if (!examId) {
+        if (extractBtn) {
+            extractBtn.disabled = false;
+            extractBtn.textContent = '🔍 提取题目';
+        }
+        if (cancelExtractBtn) {
+            cancelExtractBtn.style.display = 'none';
+        }
+        if (gradeBtn) {
+            gradeBtn.disabled = true;
+            gradeBtn.textContent = '📝 开始批改';
+        }
+        if (cancelGradingBtn) {
+            cancelGradingBtn.style.display = 'none';
+        }
+        return;
+    }
+    
+    const status = processingExams[examId] || {};
+    
+    if (extractBtn) {
+        if (status.extracting) {
+            extractBtn.disabled = true;
+            extractBtn.textContent = '提取中...';
+            if (cancelExtractBtn) cancelExtractBtn.style.display = 'inline-block';
+        } else {
+            extractBtn.disabled = false;
+            extractBtn.textContent = '🔍 提取题目';
+            if (cancelExtractBtn) cancelExtractBtn.style.display = 'none';
+        }
+    }
+    
+    if (gradeBtn) {
+        if (status.grading) {
+            gradeBtn.disabled = true;
+            gradeBtn.textContent = '批改中...';
+            if (cancelGradingBtn) cancelGradingBtn.style.display = 'inline-block';
+        } else {
+            gradeBtn.disabled = currentQuestions.length === 0;
+            gradeBtn.textContent = '📝 开始批改';
+            if (cancelGradingBtn) cancelGradingBtn.style.display = 'none';
+        }
+    }
 }
 
 function updateImageNav() {
@@ -463,7 +534,10 @@ function renderQuestionsList() {
                            data-field="max_score"
                            data-index="${index}"
                            min="0" step="0.5"> 分
-                    <button class="btn-delete-question" data-index="${index}" title="删除题目">🗑️</button>
+                    <button class="btn-delete-question ${processingExams[currentExamId]?.grading ? 'disabled' : ''}" 
+                            data-index="${index}" 
+                            title="${processingExams[currentExamId]?.grading ? '批改中无法删除' : '删除题目'}"
+                            ${processingExams[currentExamId]?.grading ? 'disabled' : ''}>🗑️</button>
                 </div>
             </div>
             <div class="question-text">${q.ocr_text ? marked.parse(q.ocr_text) : '未识别到题干'}</div>
@@ -676,6 +750,12 @@ function renderQuestionsList() {
     list.querySelectorAll('.btn-delete-question').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
+            const examId = currentExamId;
+            if (processingExams[examId]?.grading) {
+                alert('批改中无法删除题目，请等待批改完成');
+                return;
+            }
+            
             const index = parseInt(btn.dataset.index);
             const question = currentQuestions[index];
             
@@ -724,6 +804,12 @@ function renderQuestionsList() {
     
     // 批量删除按钮
     batchDeleteBtn.addEventListener('click', async () => {
+        const examId = currentExamId;
+        if (processingExams[examId]?.grading) {
+            alert('批改中无法删除题目，请等待批改完成');
+            return;
+        }
+        
         const selectedCheckboxes = list.querySelectorAll('.question-checkbox:checked');
         const selectedIndices = Array.from(selectedCheckboxes).map(cb => parseInt(cb.dataset.index));
         
@@ -1468,6 +1554,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (examIdParam) {
         currentExamId = parseInt(examIdParam);
+        if (currentExamId) {
+            loadExam(currentExamId);
+        }
     }
     
     if (pageParam === 'correction' && currentExamId) {
@@ -1529,7 +1618,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!name) return;
         
         try {
-            await apiRequest('/exams', {
+            const newExam = await apiRequest('/exams', {
                 method: 'POST',
                 body: JSON.stringify({
                     subject_id: currentSubjectId,
@@ -1539,7 +1628,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             hideModal('exam');
+            
+            currentExamId = newExam.id;
+            currentQuestions = [];
+            currentImage = null;
+            currentImageList = [];
+            currentImageIndex = 0;
+            selectedImagesForExtraction = [];
+            
             loadExams(currentSubjectId);
+            showUploadModalForExam();
         } catch (error) {
             console.error('创建考试失败:', error);
             alert('创建考试失败: ' + error.message);
@@ -1708,25 +1806,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (processingExams[currentExamId]?.extracting) {
-            alert('当前考试正在提取题目中，请稍候再试');
+        const examId = currentExamId;
+        if (!examId) {
+            alert('请先选择一个考试');
+            return;
+        }
+        
+        if (processingExams[examId]?.extracting) {
+            alert('该考试正在提取题目中，请稍候再试');
             return;
         }
         
         hideModal('select-images');
         
+        cancelExtractRequest = false;
+        
         const btn = document.getElementById('extract-questions-btn');
         btn.disabled = true;
         btn.textContent = '提取中...';
         
-        processingExams[currentExamId] = { ...processingExams[currentExamId], extracting: true };
-        updateExamCardStatus(currentExamId);
+        processingExams[examId] = { ...processingExams[examId], extracting: true };
+        updateExamCardStatus(examId);
+        updateExtractButtonState();
 
         try {
             console.log('开始提取题目，图片列表:', selectedImagesForExtraction);
 
             const formData = new FormData();
-            formData.append('exam_id', currentExamId);
+            formData.append('exam_id', examId);
             formData.append('extract', 'true');
 
             for (let i = 0; i < selectedImagesForExtraction.length; i++) {
@@ -1740,6 +1847,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 body: formData
             });
+
+            if (cancelExtractRequest) {
+                console.log('提取已取消');
+                return;
+            }
 
             console.log('提取题目响应状态:', response.status);
             
@@ -1766,16 +1878,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('未检测到题目，请检查图片是否清晰');
             }
         } catch (error) {
+            if (cancelExtractRequest) {
+                console.log('提取已取消');
+                return;
+            }
             console.error('提取题目失败:', error);
             console.error('错误详情:', error.stack);
             alert('分析失败：' + error.message);
         } finally {
             btn.disabled = false;
             btn.textContent = '提取题目';
-            if (processingExams[currentExamId]) {
-                processingExams[currentExamId].extracting = false;
+            if (processingExams[examId]) {
+                processingExams[examId].extracting = false;
             }
-            updateExamCardStatus(currentExamId);
+            updateExamCardStatus(examId);
+            updateExtractButtonState();
         }
     }
     
@@ -1876,23 +1993,37 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (processingExams[currentExamId]?.grading) {
-            alert('当前考试正在批改中，请稍候再试');
+        const examId = currentExamId;
+        if (!examId) {
+            alert('请先选择一个考试');
             return;
         }
+        
+        if (processingExams[examId]?.grading) {
+            alert('该考试正在批改中，请稍候再试');
+            return;
+        }
+        
+        cancelGradingRequest = false;
         
         const btn = document.getElementById('start-grading-btn');
         btn.disabled = true;
         btn.textContent = '批改中...';
         
-        processingExams[currentExamId] = { ...processingExams[currentExamId], grading: true };
-        updateExamCardStatus(currentExamId);
+        processingExams[examId] = { ...processingExams[examId], grading: true };
+        updateExamCardStatus(examId);
+        updateExtractButtonState();
         
         try {
-            console.log('开始批改，请求URL:', `${API_BASE}/grade-all/${currentExamId}`);
-            const gradedQuestions = await apiRequest(`/grade-all/${currentExamId}`, {
+            console.log('开始批改，请求URL:', `${API_BASE}/grade-all/${examId}`);
+            const gradedQuestions = await apiRequest(`/grade-all/${examId}`, {
                 method: 'POST'
             });
+            
+            if (cancelGradingRequest) {
+                console.log('批改已取消');
+                return;
+            }
             
             console.log('批改完成，返回结果:', gradedQuestions);
             currentQuestions = gradedQuestions;
@@ -1900,15 +2031,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
             alert('批改完成！');
         } catch (error) {
+            if (cancelGradingRequest) {
+                console.log('批改已取消');
+                return;
+            }
             console.error('批改失败:', error);
             alert('批改失败：' + error.message);
         } finally {
             btn.disabled = false;
             btn.textContent = '开始批改';
-            if (processingExams[currentExamId]) {
-                processingExams[currentExamId].grading = false;
+            if (processingExams[examId]) {
+                processingExams[examId].grading = false;
             }
-            updateExamCardStatus(currentExamId);
+            updateExamCardStatus(examId);
+            updateExtractButtonState();
         }
     });
 
@@ -1956,6 +2092,30 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
     document.getElementById('reset-settings-btn').addEventListener('click', resetSettings);
+    
+    document.getElementById('cancel-extract-btn').addEventListener('click', () => {
+        if (confirm('确定要取消提取吗？')) {
+            cancelExtractRequest = true;
+            const examId = currentExamId;
+            if (processingExams[examId]) {
+                processingExams[examId].extracting = false;
+            }
+            updateExamCardStatus(examId);
+            updateExtractButtonState();
+        }
+    });
+    
+    document.getElementById('cancel-grading-btn').addEventListener('click', () => {
+        if (confirm('确定要终止批改吗？当前已批改的题目将保留。')) {
+            cancelGradingRequest = true;
+            const examId = currentExamId;
+            if (processingExams[examId]) {
+                processingExams[examId].grading = false;
+            }
+            updateExamCardStatus(examId);
+            updateExtractButtonState();
+        }
+    });
     
     document.getElementById('dashboard-subject-select').addEventListener('change', (e) => {
         loadDashboardData(parseInt(e.target.value));
